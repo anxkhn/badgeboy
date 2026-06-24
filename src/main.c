@@ -85,6 +85,14 @@ static int g_speed = 0;       // 0 normal, 1 two times, 2 maximum
 static int g_slot = 0;        // selected save-state slot
 static uint32_t g_rom_id = 0; // set in main, used by save and load
 
+// A short on-screen message shown for a moment after an action (save, load).
+static char g_toast[16] = "";
+static uint32_t g_toast_until = 0;
+static void toast(const char *m) {
+    snprintf(g_toast, sizeof(g_toast), "%s", m);
+    g_toast_until = time_us_32() + 1200000;
+}
+
 static void draw_line(struct gb_s *gb, const uint8_t pixels[160],
                       const uint_fast8_t line); // defined below
 
@@ -557,21 +565,33 @@ int main(void) {
         // Restore a snapshot: overwrite the machine state and cart RAM, then
         // re-link the callbacks and priv pointer to this build's code and data.
         if (do_restore) {
+            char m[16];
             if (state_load(g_slot, &gb, sizeof(gb), priv.cart_ram,
                            sizeof(priv.cart_ram), rid)) {
                 relink_gb();
                 ram_dirty = true; // let the restored cart RAM reach flash
                 ram_write_us = time_us_32();
+                snprintf(m, sizeof(m), "Loaded [%d]", g_slot);
+            } else {
+                snprintf(m, sizeof(m), "No state [%d]", g_slot);
             }
+            toast(m);
             do_restore = false;
         }
+
+        // A short text message in the corner, shown for a moment after actions.
+        if (time_us_32() < g_toast_until)
+            draw_text(priv.fb, 5, GB_H - FONT_H - 2, g_toast, 0x07FF);
 
         lcd_blit_gb(priv.fb);
 
         // Take a snapshot: this briefly freezes while the slot is written.
         if (do_snapshot) {
-            state_store(g_slot, &gb, sizeof(gb), priv.cart_ram, sizeof(priv.cart_ram),
-                        rid);
+            char m[16];
+            bool ok = state_store(g_slot, &gb, sizeof(gb), priv.cart_ram,
+                                  sizeof(priv.cart_ram), rid);
+            snprintf(m, sizeof(m), ok ? "Saved [%d]" : "Save fail", g_slot);
+            toast(m);
             do_snapshot = false;
         }
 
@@ -585,6 +605,7 @@ int main(void) {
             if (crc != saved_crc) {
                 save_store(priv.cart_ram, save_size, rid);
                 saved_crc = crc;
+                toast("Game saved");
             }
         }
 
