@@ -37,12 +37,12 @@ uint32_t save_crc32(const uint8_t *data, uint32_t len);
 // Snapshot the emulator to a slot. Returns false if the slot index is invalid
 // or the data does not fit. The gb_s pointers are not used by this module; the
 // caller re-links them after a load.
-bool state_store(int slot, const void *gb, uint32_t gb_size,
-                 const uint8_t *cart_ram, uint32_t ram_size, uint32_t rom_id);
+bool state_store(int slot, const void *gb, uint32_t gb_size, const uint8_t *cart_ram,
+                 uint32_t ram_size, uint32_t rom_id);
 
 // Restore a snapshot from a slot into gb and cart_ram. Returns false when the
 // slot holds no compatible snapshot for this build, ROM, and sizes.
-bool state_load(int slot, void *gb, uint32_t gb_size,
-                uint8_t *cart_ram, uint32_t ram_size, uint32_t rom_id);
+bool state_load(int slot, void *gb, uint32_t gb_size, uint8_t *cart_ram,
+                uint32_t ram_size, uint32_t rom_id);
 
 #endif // SAVE_H
