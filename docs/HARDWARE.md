@@ -11,6 +11,28 @@ obtained, and how to reproduce it.
   (the common Pico 2) cannot drive this display.
 - Dual Cortex-M33, 520 KB SRAM, external QSPI flash.
 
+## Module and memory
+
+The badge is built around what is effectively a Pimoroni Pico Plus 2 W. The
+relevant figures were confirmed from the board profile, the Pimoroni spec, and
+the stock firmware:
+
+| Resource | Value | Notes |
+|----------|-------|-------|
+| Flash    | 16 MB QSPI, XiP | Room for a ROM library plus save slots |
+| PSRAM    | 8 MB, CS on GPIO 47 | Free space for framebuffers, shaders, NES |
+| Wireless | CYW43439 (WiFi and Bluetooth) | Stock MonaOS connects with `network.WLAN` |
+| Audio    | none | No speaker, codec, DAC, or jack |
+
+Two consequences for firmware design:
+
+- There is generous storage and RAM. Multiple ROMs, save states, and a second
+  console core all fit. The constraint is engineering time, not memory.
+- There is no audio path at all. Stock MonaOS contains no sound code. Producing
+  sound requires a hardware mod (an external I2S DAC on the Qwiic/STEMMA bus, or
+  PWM plus an RC filter to a wired jack). Bluetooth earphone (A2DP) audio over
+  the CYW43439 is not practical on this SDK stack.
+
 ## Display
 
 A 320x240 ST7789 driven over an 8-bit parallel 8080 bus, not SPI. This is the

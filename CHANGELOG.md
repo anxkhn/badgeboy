@@ -3,6 +3,18 @@
 All notable changes to this project are documented here. The format is based on
 Keep a Changelog, and the project follows semantic versioning.
 
+## [Unreleased]
+
+### Changed
+
+- Documented the verified module memory and radio: 16 MB flash, 8 MB PSRAM
+  (CS GPIO 47), and a CYW43439 WiFi and Bluetooth radio, confirmed from the stock
+  firmware and the board profile. See `docs/HARDWARE.md`.
+- Reworked the roadmap in `AGENTS.md` into effort-ordered tiers covering
+  fast-forward, color correction and palettes, a flash storage layer, persistent
+  saves, save-state slots, an in-game menu, display shaders, a ROM browser, NES
+  support, a MonaOS dual-boot launcher, and the hardware constraints on audio.
+
 ## [0.1.0] - 2026-06-24
 
 First working release. A Game Boy Color title boots, renders full screen, and is
