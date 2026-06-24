@@ -6,24 +6,37 @@ system, no scheduler, and no dynamic allocation in the run loop.
 
 ## Data flow
 
-```
-gb_rom[] in flash
-      |
-      v
-Peanut-GB core (third_party/peanut-gb/peanut_gb.h)
-   gb_run_frame() -> draw_line() callback, once per scanline
-      |
-      v
-framebuffer  priv.fb[160*144], RGB565, byte-swapped for the panel
-      |
-      v
-lcd_blit_gb()  nearest-neighbour scale into the display window
-      |
-      v
-PIO + DMA  ->  8080 parallel ST7789  ->  320x240 panel
+```mermaid
+flowchart TD
+    ROM["gb_rom[] in flash"] --> CORE
+    CORE["Peanut-GB core<br/>gb_run_frame()"] -->|draw_line() per scanline| FB
+    FB["framebuffer priv.fb<br/>160x144 RGB565, byte-swapped"] --> BLIT
+    BLIT["lcd_blit_gb()<br/>nearest-neighbour scale"] --> PIO
+    PIO["PIO + DMA<br/>8080 parallel ST7789"] --> PANEL["320x240 panel"]
+    INPUT["read_joypad()<br/>5 buttons to 8 inputs"] -->|once per frame| CORE
 ```
 
 Input is read once per frame and written to the Peanut-GB joypad register.
+
+## Save and state flow
+
+Two independent persistence paths share one flash storage layer (`src/save.c`).
+
+```mermaid
+flowchart LR
+    subgraph game["In game"]
+        IGS["In-game Save menu"] --> CRAM["cart RAM"]
+        SNAP["HOME+UP / menu"] -.snapshot.-> GBS["whole gb_s + cart RAM"]
+    end
+    subgraph flash["Reserved flash (top of 16 MB)"]
+        BAT["battery save<br/>64 KiB region"]
+        ST["state slots<br/>3 x 128 KiB"]
+    end
+    CRAM -->|auto-flush, CRC-gated| BAT
+    GBS -->|state_store| ST
+    BAT -->|save_load on boot| CRAM
+    ST -->|state_load, then relink| GBS
+```
 
 ## Components
 
@@ -41,9 +54,10 @@ with `ENABLE_SOUND` 0 because the badge has no speaker.
 The core calls `draw_line()` once per visible scanline with 160 pixel indices.
 
 - In Game Boy Color mode, each pixel indexes `gb->cgb.fixPalette`, a 15-bit
-  RGB555 entry. `main.c` converts it to RGB565.
-- In DMG mode, each pixel is a 2-bit shade mapped through a fixed greenish
-  palette.
+  RGB555 entry. `main.c` converts it to RGB565, optionally through the Gambatte
+  color-correction matrix so colors match the real CGB LCD.
+- In DMG mode, each pixel is a 2-bit shade mapped through one of four selectable
+  palettes.
 
 Each pixel is byte swapped to big-endian as it is written, so the panel blit can
 stream the framebuffer without per-pixel work.
@@ -74,15 +88,19 @@ and Select are reachable without dedicated buttons.
 ### Main loop
 
 `main()` initialises stdio, the display, and the buttons, calls `gb_init` and
-`gb_init_lcd`, then loops: read input, run one frame, blit, and pace to roughly
-59.7 Hz. If `gb_init` fails, the backlight pulses as a visible error signal.
+`gb_init_lcd`, loads any battery save, then loops: read input, run one or more
+frames (fast-forward runs several per blit), blit, persist saves when due, and
+pace to roughly 59.7 Hz. HOME is a function modifier for speed, color correction,
+save states, and the menu; HOME+C opens the modal in-game menu, which pauses the
+game. If `gb_init` fails, the backlight pulses as a visible error signal.
 
 ## Memory
 
 - The ROM lives in flash and is read through the `gb_rom_read` callback. It is
   not copied to RAM.
 - Cart RAM, the framebuffer, and the Peanut-GB state live in SRAM. Cart RAM is
-  currently volatile; persistence is on the roadmap.
+  persisted to a reserved flash region by `src/save.c`, and reloaded on boot.
+  Save-state snapshots store the whole `gb_s` plus cart RAM to numbered slots.
 
 ## Why bare metal and not a MicroPython app
 
@@ -93,7 +111,7 @@ is that it replaces MonaOS while running; MonaOS is restored by reflashing.
 
 ## Extending
 
-See the roadmap in AGENTS.md. The most requested next steps are battery-backed
-saves and a multi-game launcher. A launcher requires a decision on ROM storage:
-several ROMs embedded in flash, or a filesystem with USB mass-storage so ROMs can
-be dropped on without rebuilding.
+See [ROADMAP.md](../ROADMAP.md). With battery saves and save states done, the
+next steps are display shaders, a multi-game ROM browser, and NES support. A
+launcher requires a decision on ROM storage: several ROMs embedded in flash, or a
+filesystem with USB mass-storage so ROMs can be dropped on without rebuilding.

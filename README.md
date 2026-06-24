@@ -25,8 +25,10 @@ save-state snapshots.
 - Embeds one ROM of your choice into flash at build time.
 - Maps the five front buttons to the eight Game Boy inputs using a shift modifier.
 
-This is a custom firmware image. Flashing it replaces the stock MonaOS launcher.
-MonaOS can be restored at any time (see [docs/FLASHING.md](docs/FLASHING.md)).
+> [!WARNING]
+> This is a custom firmware image. Flashing it replaces the stock MonaOS
+> launcher. MonaOS can be restored at any time, see
+> [docs/FLASHING.md](docs/FLASHING.md).
 
 ## What it does not do
 
@@ -112,10 +114,11 @@ set after you let go:
 - **HOME + DOWN**: restore the last snapshot.
 - **HOME + C**: open the in-game menu.
 
-The in-game menu collects everything in one place: speed, color correction, DMG
-palette, the save-state slot, save and load state, and reset. While it is open
-the game pauses; UP and DOWN move, A activates or steps a value forward, C steps
-it back, and B closes.
+> [!TIP]
+> The in-game menu collects everything in one place: speed, color correction, DMG
+> palette, the save-state slot, save and load state, and reset. While it is open
+> the game pauses; UP and DOWN move, A activates or steps a value forward, C steps
+> it back, and B closes.
 
 There are two independent kinds of save:
 
@@ -169,9 +172,10 @@ on the badge. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and
 
 ## Legal
 
-BadgeBoy ships no game ROMs. Supply only software you legally own. Generated ROM
-headers and built images contain copyrighted data and are excluded from version
-control by `.gitignore`. Do not commit or distribute them.
+> [!IMPORTANT]
+> BadgeBoy ships no game ROMs. Supply only software you legally own. Generated
+> ROM headers and built images contain copyrighted data and are excluded from
+> version control by `.gitignore`. Do not commit or distribute them.
 
 ## Acknowledgements
 

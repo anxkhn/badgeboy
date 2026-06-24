@@ -10,8 +10,8 @@ on the badge itself.
   type (run `tools/rom2c.py` to print it), the display mode, and what you saw.
 - Improve documentation. The hardware notes and bring-up table are meant to save
   the next person time, so corrections and additions are valuable.
-- Pick up a roadmap item. See the roadmap in [AGENTS.md](AGENTS.md). Good first
-  items are battery-backed saves and a multi-game launcher.
+- Pick up a roadmap item. See [ROADMAP.md](ROADMAP.md). Good next items are
+  display shaders and a multi-game ROM browser.
 
 ## Workflow
 
@@ -20,16 +20,24 @@ on the badge itself.
    ```bash
    git checkout -b feature/short-description
    ```
-3. Make your change. Keep commits focused and write clear messages. The first
-   line should be a concise summary in the imperative mood, for example
-   "Add aspect-correct display mode".
-4. Build and test on hardware:
+3. Make your change. Keep commits focused and follow
+   [Conventional Commits](https://www.conventionalcommits.org): a `type(scope):
+   summary` subject in the imperative mood, for example
+   `feat(display): add aspect-correct mode` or `fix(save): guard empty slot`.
+   Common types here are `feat`, `fix`, `docs`, `build`, `style`, `refactor`,
+   and `chore`.
+4. Format your C with clang-format before committing:
+   ```bash
+   ./tools/format.sh          # format src/ in place
+   ./tools/format.sh --check  # verify without changing files
+   ```
+5. Build and test on hardware:
    ```bash
    ./build.sh /abs/path/to/known_good_game.gbc fullscreen
    ```
    Flash the result and confirm the image is upright, correctly scaled, and that
    input responds. Note in your pull request which ROM and display mode you used.
-5. Push your branch and open a pull request against `main`. Describe what you
+6. Push your branch and open a pull request against `main`. Describe what you
    changed, why, and how you tested it. Screenshots or a short video of the badge
    help a lot for display changes.
 
@@ -37,6 +45,7 @@ on the badge itself.
 
 - Plain C11 against the Pico SDK. No RTOS and no dynamic allocation in the run
   loop.
+- Format with clang-format using the repository `.clang-format` (`./tools/format.sh`).
 - Keep verified hardware values in `src/config.h`, not scattered through the code.
 - Match the existing style: short comments that explain why, not what.
 - Record new hardware findings in [docs/HARDWARE.md](docs/HARDWARE.md) and, if
