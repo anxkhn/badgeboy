@@ -95,7 +95,7 @@ target_compile_definitions(badgeboy PRIVATE
 target_include_directories(badgeboy PRIVATE
   src
   third_party/peanut-gb
-  third_party/font8x8
+  third_party/arcade8x8
   ${GEN_DIR}
   ${CMAKE_CURRENT_BINARY_DIR}
 )
