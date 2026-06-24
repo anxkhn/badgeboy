@@ -49,9 +49,13 @@ it carefully, since a bad write is how you brick the badge.
   `flash_range_program` with interrupts disabled (safe because the firmware is
   single core). Implemented in `src/save.c`. Verified on hardware across a full
   power cycle.
-- [ ] **Save-state slots.** Serialize the full `struct gb_s` plus cart RAM to
-  numbered flash slots. The save and restore mechanism is independent of the UI
-  and can land first with a fixed slot, then gain slot selection from the menu.
+- [~] **Save-state slots.** A full snapshot of the machine (the whole `gb_s`
+  struct plus cart RAM) written to a numbered flash slot, independent of the
+  battery save. Implemented in `src/save.c` as `state_store` and `state_load`,
+  tagged with the firmware build and ROM id so a snapshot only restores into a
+  compatible binary and game; the callbacks and priv pointer are re-linked after
+  a load. One slot is wired now (HOME+UP snapshot, HOME+DOWN restore); slot
+  selection arrives with the in-game menu. Pending hardware verification.
 
 ## Tier 3: requires an on-screen UI overlay
 

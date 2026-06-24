@@ -20,6 +20,7 @@ that persist across power cycles.
 - Game Boy Color color correction that matches the real CGB LCD, toggleable live.
 - Latched fast-forward (2x and maximum) with an on-screen speed indicator.
 - Battery-backed cartridge saves persisted to flash, reloaded on boot.
+- Save-state snapshots: capture and restore the exact moment, anywhere.
 - Four selectable palettes for monochrome Game Boy games.
 - Embeds one ROM of your choice into flash at build time.
 - Maps the five front buttons to the eight Game Boy inputs using a shift modifier.
@@ -33,8 +34,7 @@ MonaOS can be restored at any time (see [docs/FLASHING.md](docs/FLASHING.md)).
 - No Game Boy Advance. GBA is well beyond the RP2350 and is out of scope.
 - No on-device ROM browser yet. One ROM is embedded per build. A multi-game
   launcher is on the roadmap.
-- No save states yet (mid-game snapshots). Only battery saves are persisted so
-  far. Save-state slots are on the roadmap.
+- One save-state slot for now. Multiple slots arrive with the in-game menu.
 
 ## Requirements
 
@@ -108,10 +108,18 @@ set after you let go:
 - **HOME + A**: cycle speed, normal then 2x then maximum then back to normal.
 - **HOME + B**: toggle Game Boy Color color correction, to compare the corrected
   and raw palettes live.
-- **HOME + UP**: save the cartridge RAM to flash now.
+- **HOME + UP**: take a save-state snapshot (instant, anywhere in the game).
+- **HOME + DOWN**: restore the last snapshot.
 
-Battery-backed games also save automatically a moment after the in-game save
-finishes, and the save is reloaded on the next boot.
+There are two independent kinds of save:
+
+- **Battery save** is the game's own save (its in-game Save menu). BadgeBoy writes
+  it to flash automatically a moment after you save, and reloads it on the next
+  boot, so it survives power off. You restore it the normal way, through the
+  game's Continue or Load menu. No button is involved.
+- **Save state** is a full snapshot of the exact moment, taken with HOME+UP and
+  restored with HOME+DOWN, independent of the game's own save. A magenta marker
+  shows a snapshot being written; green or red marks a restore as found or not.
 
 ## Customization
 

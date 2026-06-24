@@ -210,9 +210,11 @@ int main(void) {
     // HOME is a function modifier, like a Fn key. While HOME is held the front
     // buttons control the emulator instead of the game, and their effect is
     // latched, so a change persists after the buttons are released:
-    //   HOME + A  cycle speed: normal -> 2x -> max -> normal
-    //   HOME + B  toggle GBC color correction
-    //   HOME + UP save the cartridge RAM to flash now
+    //   HOME + A    cycle speed: normal -> 2x -> max -> normal
+    //   HOME + B    toggle GBC color correction
+    //   HOME + UP   take a save-state snapshot (slot 0)
+    //   HOME + DOWN restore the save-state snapshot (slot 0)
+    // The cartridge battery save persists automatically; it needs no button.
     //
     // Fast-forward runs several emulated frames per displayed frame and skips
     // rendering and the (blocking) blit on the intermediate frames, so it speeds
@@ -220,25 +222,30 @@ int main(void) {
     const uint32_t frame_us = 16743;   // 59.7 Hz
     const int frames_per_blit[3] = { 1, 2, 6 };
     int  speed = 0;                    // 0 normal, 1 two times, 2 maximum
-    bool prev_a = false, prev_b = false, prev_up = false;
-    bool force_save = false;
+    bool prev_a = false, prev_b = false, prev_up = false, prev_dn = false;
+    bool do_snapshot = false, do_restore = false;
     uint32_t indicator_until = 0;
+    uint32_t note_until = 0;           // transient marker for state save/restore
+    uint16_t note_col = 0;
 
     while (1) {
         uint32_t t0 = time_us_32();
 
         uint8_t jp;
         if (down(BTN_HOME)) {
-            bool a = down(BTN_A), b = down(BTN_B), up = down(BTN_UP);
+            bool a = down(BTN_A), b = down(BTN_B);
+            bool up = down(BTN_UP), dn = down(BTN_DOWN);
             if (a  && !prev_a)  { speed = (speed + 1) % 3; indicator_until = t0 + 1500000; }
             if (b  && !prev_b)  { color_correct = !color_correct; indicator_until = t0 + 1500000; }
-            if (up && !prev_up) { force_save = true; }
+            if (up && !prev_up) do_snapshot = true;
+            if (dn && !prev_dn) do_restore = true;
             prev_a = a;
             prev_b = b;
             prev_up = up;
+            prev_dn = dn;
             jp = 0xFF;                  // no game input while in function mode
         } else {
-            prev_a = prev_b = prev_up = false;
+            prev_a = prev_b = prev_up = prev_dn = false;
             jp = read_joypad();
         }
         gb.direct.joypad = jp;
@@ -250,26 +257,58 @@ int main(void) {
             gb_run_frame(&gb);
         }
 
+        // Restore a snapshot: overwrite the machine state and cart RAM, then
+        // re-link the callbacks and priv pointer to this build's code and data.
+        if (do_restore) {
+            bool ok = state_load(0, &gb, sizeof(gb),
+                                 priv.cart_ram, sizeof(priv.cart_ram), rid);
+            if (ok) {
+                gb.gb_rom_read       = &rom_read;
+                gb.gb_cart_ram_read  = &ram_read;
+                gb.gb_cart_ram_write = &ram_write;
+                gb.gb_error          = &gb_err;
+                gb.direct.priv       = &priv;
+                gb.display.lcd_draw_line = &draw_line;
+                ram_dirty = true;       // let the restored cart RAM reach flash
+                ram_write_us = time_us_32();
+            }
+            note_until = time_us_32() + 800000;
+            note_col = ok ? 0x07E0 : 0xF800;   // green ok, red failed
+            do_restore = false;
+        }
+
         if (speed != 0 || t0 < indicator_until)
             draw_indicator(priv.fb, speed, color_correct);
+        if (time_us_32() < note_until)
+            put_block(priv.fb, GB_W - 10, 4, 6, 6, note_col);
 
         lcd_blit_gb(priv.fb);
 
-        // Persist the cartridge save when the player asks (HOME+UP) or once game
-        // writes have settled for 1.5 s. A CRC check skips redundant writes so
-        // flash wear stays low. The flash erase and program briefly freeze the
-        // emulator, so a marker is shown first.
+        // Take a snapshot: freeze briefly while the slot is erased and written.
+        // Show a marker first so the pause is explained.
+        if (do_snapshot) {
+            put_block(priv.fb, GB_W - 10, 4, 6, 6, 0xF81F);   // magenta
+            lcd_blit_gb(priv.fb);
+            bool ok = state_store(0, &gb, sizeof(gb),
+                                  priv.cart_ram, sizeof(priv.cart_ram), rid);
+            note_until = time_us_32() + 800000;
+            note_col = ok ? 0xF81F : 0xF800;
+            do_snapshot = false;
+        }
+
+        // The cartridge battery save persists automatically once game writes
+        // have settled for 1.5 s. A CRC check skips redundant writes to limit
+        // flash wear. The flash program briefly freezes the emulator.
         bool settled = ram_dirty && (time_us_32() - ram_write_us > 1500000);
-        if (save_size && (force_save || settled)) {
+        if (save_size && settled) {
             uint32_t crc = save_crc32(priv.cart_ram, save_size);
             ram_dirty = false;
-            if (force_save || crc != saved_crc) {
-                put_block(priv.fb, GB_W - 10, 4, 6, 6, 0xFFFF);
+            if (crc != saved_crc) {
+                put_block(priv.fb, GB_W - 10, 14, 6, 6, 0xFFFF);
                 lcd_blit_gb(priv.fb);
                 save_store(priv.cart_ram, save_size, rid);
                 saved_crc = crc;
             }
-            force_save = false;
         }
 
         // Speed 0 and 2x both pace to one 59.7 Hz display frame; 2x simply runs
