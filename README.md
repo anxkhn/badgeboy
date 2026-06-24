@@ -110,6 +110,12 @@ set after you let go:
   and raw palettes live.
 - **HOME + UP**: take a save-state snapshot (instant, anywhere in the game).
 - **HOME + DOWN**: restore the last snapshot.
+- **HOME + C**: open the in-game menu.
+
+The in-game menu collects everything in one place: speed, color correction, DMG
+palette, the save-state slot, save and load state, and reset. While it is open
+the game pauses; UP and DOWN move, A activates or steps a value forward, C steps
+it back, and B closes.
 
 There are two independent kinds of save:
 

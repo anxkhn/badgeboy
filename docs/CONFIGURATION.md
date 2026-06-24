@@ -96,13 +96,13 @@ and the effect is latched (it persists after release):
 |----------|--------|
 | HOME + A | cycle speed: normal, 2x, maximum |
 | HOME + B | toggle GBC color correction |
-| HOME + UP | take a save-state snapshot (slot 0) |
-| HOME + DOWN | restore the save-state snapshot (slot 0) |
+| HOME + UP | take a save-state snapshot (selected slot) |
+| HOME + DOWN | restore the save-state snapshot (selected slot) |
+| HOME + C | open the in-game menu |
 
-The cartridge battery save (the game's own save menu) is persisted to flash
-automatically and reloaded on boot; it needs no button. Save states are a
-separate, full snapshot of the machine taken with HOME+UP and restored with
-HOME+DOWN.
+The in-game menu pauses the game and gathers speed, color correction, DMG
+palette, save-state slot selection, save and load state, and reset. Inside it,
+UP and DOWN move, A activates or steps a value forward, C steps back, B closes.
 
 The in-game mapping is in `read_joypad()` and the HOME function handling is in the
 main loop, both in `src/main.c`. The button GPIOs are fixed by hardware and live

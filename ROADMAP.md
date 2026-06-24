@@ -62,10 +62,11 @@ it carefully, since a bad write is how you brick the badge.
 
 ## Tier 3: requires an on-screen UI overlay
 
-- [ ] **In-game menu.** A pause overlay drawn over a frozen frame: Resume, Save
-  State, Load State, Fast-forward, Reset, Palette. This is the UI host for the
-  save-state slots and palette features. Needs a minimal bitmap font and input
-  focus handling; no new hardware.
+- [~] **In-game menu.** A pause overlay drawn over a dimmed frame: Resume, Speed,
+  Color correction, Palette, save-state Slot, Save state, Load state, Reset.
+  Opened with HOME+C; the game pauses while it is open. Uses a vendored 8x8
+  bitmap font (`third_party/font8x8`). This is the UI host that unlocks save-state
+  slot selection. Implemented in `src/main.c`; pending hardware verification.
 - [ ] **Display shaders.** Per-pixel effects in the scaling blit: scanlines and a
   dot-matrix or LCD grid overlay, alongside the GBC correction from Tier 1. There
   is no GPU, so these are CPU-side passes; PSRAM holds the effect buffers. Costs
