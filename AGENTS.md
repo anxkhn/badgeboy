@@ -107,76 +107,8 @@ USB ids: `2e8a:000f` is BOOTSEL, `2e8a:0009` is the running firmware,
 
 ## Roadmap
 
-Ordered roughly from easiest to hardest. Effort is a rough estimate for one
-developer familiar with the codebase. Items in a tier share prerequisites, so
-doing them together is efficient.
-
-Verified hardware that shapes this list: 16 MB flash, 8 MB PSRAM, CYW43439
-wireless, and no audio hardware.
-
-### Tier 1: software only, no new storage or UI
-
-1. Fast-forward (easy). Toggle that drops the frame-time throttle and adds
-   frame-skip. Bind to a held button (for example C+HOME cycles 1x, 2x, 4x).
-   2x to 4x is comfortable. True 8x is best-effort: it is bound by display DMA
-   throughput and the core, so expect "as fast as it runs" rather than a fixed
-   multiple. Pure timing-loop change in `main.c`.
-2. GBC color correction (easy). A precomputed lookup table that maps raw CGB
-   colors to the washed, hardware-accurate palette. Applied during the RGB565
-   conversion. Table can live in PSRAM. No display cost beyond one lookup.
-3. Per-game DMG palette selection (easy). Pick the green or grey or custom
-   palette for original Game Boy titles. Static tables, selected via config or
-   the in-game menu once it exists.
-
-### Tier 2: requires a flash storage layer (shared prerequisite)
-
-The single biggest unlock. A small flash region below the firmware, written with
-the SDK flash API, used by everything below. Build it once.
-
-4. Persistent cartridge saves (moderate). Write cart SRAM to flash on HOME and
-   on a dirty-RAM timer; load it at boot. Fixes the "saves are lost on power off"
-   limitation. This is the natural first user of the flash layer.
-5. Save-state slots (moderate). Serialize the full emulator state to numbered
-   flash slots. Needs the menu in Tier 3 for slot selection, but the save and
-   restore mechanism itself is independent and can land first with a fixed slot.
-
-### Tier 3: requires an on-screen UI overlay
-
-6. In-game menu (moderate). A pause overlay drawn over a frozen frame: Resume,
-   Save State, Load State, Fast-forward, Reset, Palette. This is the UI host for
-   the save-state slots and palette features. Needs a minimal font and input
-   focus handling; no new hardware.
-7. Display shaders (moderate). Per-pixel effects in the scaling blit: scanlines
-   and a dot-matrix or LCD grid overlay, plus the GBC correction from Tier 1.
-   There is no GPU, so these are CPU-side passes; PSRAM holds the effect buffers.
-   Costs throughput, most visible in fullscreen, so make it toggleable from the
-   menu.
-
-### Tier 4: requires storage plus a launcher and asset management
-
-8. Game menu and ROM browser (hard). Store several ROMs in the 16 MB flash (or
-   stream from PSRAM) and pick one from a list at boot. Needs a flash layout for
-   ROM blobs and a browser screen built on the Tier 3 UI. A later WiFi-based
-   upload path (we have the CYW43439 radio) could replace re-flashing to add
-   games.
-9. NES support (hard). Add a second console core (for example InfoNES or a
-   compact 6502 plus PPU core) behind a console abstraction so the launcher can
-   boot either a GB or an NES title. PSRAM and CPU headroom make this viable; the
-   real work is PPU timing, mapper coverage, and a clean core interface. Depends
-   on the launcher (item 8) to choose a core.
-
-### Tier 5: hard or hardware dependent
-
-10. Dual-boot MonaOS and BadgeBoy (hard, risky). A small chain-loader in flash
-    that offers MonaOS or BadgeBoy at power-on (for example HOME held at boot).
-    Requires a deliberate flash partition layout and careful handling so a bad
-    write cannot brick the badge. We have both images, so it is possible, but it
-    is bootloader work, not a flag.
-11. Audio out (hard, needs hardware). There is no audio hardware on the badge, so
-    Peanut-GB sound stays off until one of these exists: an external I2S DAC on
-    the Qwiic/STEMMA bus, or PWM plus an RC filter to a wired jack. Bluetooth
-    earphone (A2DP) audio over the CYW43439 is not practical on this stack and is
-    not planned.
+Planned work, tiered by effort, lives in [ROADMAP.md](ROADMAP.md). Update the
+status markers there as items land and are verified on hardware.
 
 ## Verifying a change on hardware
 

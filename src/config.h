@@ -62,4 +62,20 @@
 #define GB_X_OFF ((LCD_W - GB_DRAW_W) / 2)
 #define GB_Y_OFF ((LCD_H - GB_DRAW_H) / 2)
 
+// GBC color correction. When 1, Game Boy Color titles are rendered through the
+// Gambatte color matrix, which reproduces the washed look of the real CGB LCD
+// instead of the oversaturated raw RGB555. This is the power-on default; it can
+// be toggled at runtime with C+HOME. Set to 0 to default to raw colors.
+#ifndef GBC_COLOR_CORRECTION
+#define GBC_COLOR_CORRECTION 1
+#endif
+
+// DMG palette for original (non-color) Game Boy titles. Index into the
+// dmg_palettes table in main.c:
+//   0 authentic DMG green   1 Game Boy Pocket grey
+//   2 high-contrast mono     3 dusk amber
+#ifndef DMG_PALETTE
+#define DMG_PALETTE 0
+#endif
+
 #endif // CONFIG_H

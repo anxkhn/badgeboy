@@ -94,16 +94,28 @@ dedicated button. This gives access to all eight inputs from five buttons.
 | A        | A       | Start       |
 | B        | B       | Select      |
 | C        | shift modifier | shift modifier |
-| HOME     | reserved (back button) | |
+| HOME     | function modifier | function modifier |
+
+HOME is a function modifier, like a Fn key. While HOME is held the front buttons
+control the emulator instead of the game, and the effect is latched, so it stays
+set after you let go:
+
+- **HOME + A**: cycle speed, normal then 2x then maximum then back to normal.
+- **HOME + B**: toggle Game Boy Color color correction, to compare the corrected
+  and raw palettes live.
 
 ## Customization
 
-Two options are selected at build time.
+Selected at build time.
 
 - ROM: `-DGBC_ROM=/abs/path/game.gbc`, or pass the path as the first argument
   to `build.sh`.
 - Display mode: `-DGBC_DISPLAY_MODE=FULLSCREEN|ASPECT|CENTERED`, or pass it as
   the second argument to `build.sh`.
+- DMG palette for monochrome games: `-DDMG_PALETTE=0..3`
+  (0 green, 1 grey, 2 high-contrast, 3 amber).
+- GBC color correction default: `-DGBC_COLOR_CORRECTION=0|1`. It is on by default
+  and can also be toggled live with C+HOME.
 
 ```bash
 ./build.sh ~/roms/game.gbc aspect      # correct aspect ratio, thin side borders
@@ -122,6 +134,7 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
 | [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | ROM selection, display modes, controls |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the firmware is put together |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Emulation core choice and known limits |
+| [ROADMAP.md](ROADMAP.md)                     | Planned features, tiered by effort, with status |
 | [AGENTS.md](AGENTS.md)                        | Working context for contributors and coding agents |
 
 ## Contributing

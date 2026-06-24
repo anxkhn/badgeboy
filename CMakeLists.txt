@@ -1,22 +1,24 @@
 cmake_minimum_required(VERSION 3.13)
 
+# ---------------------------------------------------------------------------
+# Target chip / board
+#
+# These must be set before the SDK is imported and before project() selects the
+# toolchain, otherwise the wrong CPU flags are used and the assembler rejects
+# RP2350 coprocessor instructions. The badge uses an RP2350B (48-GPIO) part; the
+# display data bus is on GPIO 32-39, which do not exist on the RP2350A (pico2).
+# All pins are set explicitly in src/config.h, so the board's own defaults are
+# irrelevant beyond selecting the right package and memory map.
+# ---------------------------------------------------------------------------
+set(PICO_PLATFORM rp2350-arm-s CACHE STRING "RP2350 Arm Secure platform")
+set(PICO_BOARD pimoroni_pico_plus2_rp2350 CACHE STRING "Target board")
+
 # Pull in the Pico SDK (PICO_SDK_PATH must be set, or use build.sh).
 include(pico_sdk_import.cmake)
 
 project(badgeboy C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
-
-# ---------------------------------------------------------------------------
-# Target chip / board
-#
-# The badge uses an RP2350B (48-GPIO) part. The display data bus is on
-# GPIO 32-39, which do not exist on the RP2350A (pico2). Build against an
-# RP2350B board so those pins are valid; all pins are set explicitly in
-# src/config.h, so the board's own defaults are irrelevant.
-# ---------------------------------------------------------------------------
-set(PICO_PLATFORM rp2350-arm-s)
-set(PICO_BOARD pimoroni_pico_plus2_rp2350)
 
 pico_sdk_init()
 
@@ -64,6 +66,15 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# Rendering options
+#   DMG_PALETTE: palette for monochrome games, 0..3 (see src/main.c).
+#   GBC_COLOR_CORRECTION: default state of CGB color correction, 0 or 1.
+#     It can also be toggled live with C+HOME.
+# ---------------------------------------------------------------------------
+set(DMG_PALETTE "0" CACHE STRING "DMG palette index 0..3")
+set(GBC_COLOR_CORRECTION "1" CACHE STRING "Default CGB color correction 0 or 1")
+
+# ---------------------------------------------------------------------------
 # Target
 # ---------------------------------------------------------------------------
 add_executable(badgeboy
@@ -74,7 +85,11 @@ add_dependencies(badgeboy generate_rom)
 
 pico_generate_pio_header(badgeboy ${CMAKE_CURRENT_LIST_DIR}/src/st7789_parallel.pio)
 
-target_compile_definitions(badgeboy PRIVATE DISPLAY_MODE=${DM})
+target_compile_definitions(badgeboy PRIVATE
+  DISPLAY_MODE=${DM}
+  DMG_PALETTE=${DMG_PALETTE}
+  GBC_COLOR_CORRECTION=${GBC_COLOR_CORRECTION}
+)
 
 target_include_directories(badgeboy PRIVATE
   src
