@@ -11,7 +11,7 @@
 #include "config.h"
 #include "tufty_lcd.h"
 #include "save.h"
-#include "tamzen5x9.h"
+#include "tamzen7x14.h"
 
 // Peanut-GB build options. These must be set before including the core.
 #define ENABLE_LCD 1
@@ -192,12 +192,12 @@ static inline bool down(int pin) {
     return !gpio_get(pin);
 }
 
-// Tamzen 5x9 menu font. FONT_ADV and FONT_LH are the horizontal and vertical
+// Tamzen 7x14 menu font. FONT_ADV and FONT_LH are the horizontal and vertical
 // advances (glyph size plus one pixel of spacing).
-#define FONT_W 5
-#define FONT_H 9
-#define FONT_ADV 6
-#define FONT_LH 10
+#define FONT_W 7
+#define FONT_H 14
+#define FONT_ADV 8
+#define FONT_LH 15
 
 // Draw one glyph into the byte-swapped framebuffer. The font is indexed from
 // 0x20 (space) and stores the most significant bit as the leftmost column.
@@ -206,7 +206,7 @@ static void draw_char(uint16_t *fb, int x0, int y0, char ch, uint16_t col) {
     if (uc < 0x20 || uc > 0x7F)
         uc = '?';
     uint16_t sw = (uint16_t)((col >> 8) | (col << 8));
-    const unsigned char *g = font_tamzen5x9[uc - 0x20];
+    const unsigned char *g = font_tamzen7x14[uc - 0x20];
     for (int r = 0; r < FONT_H; r++) {
         int y = y0 + r;
         if (y < 0 || y >= GB_H)
@@ -265,7 +265,7 @@ static void m_glyph(int x0, int y0, char ch, uint16_t col, int s) {
     unsigned char uc = (unsigned char)ch;
     if (uc < 0x20 || uc > 0x7F)
         uc = '?';
-    const unsigned char *g = font_tamzen5x9[uc - 0x20];
+    const unsigned char *g = font_tamzen7x14[uc - 0x20];
     uint16_t fg = (uint16_t)((col >> 8) | (col << 8));
     uint16_t sh = 0x0000;
     for (int r = 0; r < FONT_H; r++) {
@@ -514,16 +514,16 @@ static void menu_step(void) {
     m_fill(0, 0, LCD_W, LCD_H, C_BG);
 
     // Header: title, accent underline, version.
-    m_text(16, 16, "Mod Menu", C_TEXT, 3);
-    m_round(16, 48, 52, 4, C_ACCENT, 2);
+    m_text(16, 10, "Mod Menu", C_TEXT, 2);
+    m_round(16, 42, 64, 4, C_ACCENT, 2);
     {
         const char *ver = "v" BADGEBOY_VERSION;
-        m_text(LCD_W - 16 - m_text_w(ver, 2), 22, ver, C_DIM, 2);
+        m_text(LCD_W - 16 - m_text_w(ver, 1), 16, ver, C_DIM, 1);
     }
-    m_fill(0, 58, LCD_W, 1, C_CARD);
+    m_fill(0, 52, LCD_W, 1, C_CARD);
 
     // Item list.
-    const int top = 66, rh = 20;
+    const int top = 56, rh = 20;
     int row = 0;
     for (int i = 0; i < MI_COUNT; i++) {
         if (!menu_item_visible(i))
@@ -537,20 +537,20 @@ static void menu_step(void) {
             m_round(12, y - 1, LCD_W - 24, rh - 2, C_CARD, 6);
             m_round(16, y + 3, 4, rh - 10, C_ACCENT, 2);
         }
-        m_text(28, y + 1, menu_name(i), name_c, 2);
+        m_text(28, y + 3, menu_name(i), name_c, 1);
         char val[16];
         menu_value(i, val, sizeof(val));
         if (val[0])
-            m_text(LCD_W - 24 - m_text_w(val, 2), y + 1, val, val_c, 2);
+            m_text(LCD_W - 24 - m_text_w(val, 1), y + 3, val, val_c, 1);
     }
 
     // Footer: a status line after an action, otherwise control hints.
-    m_fill(16, LCD_H - 22, LCD_W - 32, 1, C_CARD);
+    m_fill(16, LCD_H - 24, LCD_W - 32, 1, C_CARD);
     if (g_status[0]) {
-        m_text((LCD_W - m_text_w(g_status, 1)) / 2, LCD_H - 14, g_status, C_TEAL, 1);
+        m_text((LCD_W - m_text_w(g_status, 1)) / 2, LCD_H - 18, g_status, C_TEAL, 1);
     } else {
-        const char *hint = "Up/Dn  move      A  select      C  back      B  close";
-        m_text((LCD_W - m_text_w(hint, 1)) / 2, LCD_H - 14, hint, C_FAINT, 1);
+        const char *hint = "Up/Dn  A select  C back  B close";
+        m_text((LCD_W - m_text_w(hint, 1)) / 2, LCD_H - 18, hint, C_FAINT, 1);
     }
 
     if (g_menu_open == false)
