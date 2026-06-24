@@ -21,6 +21,10 @@ void lcd_fill(uint16_t colour565);
 // framebuffer must hold big-endian RGB565 values (see main.c).
 void lcd_blit_gb(const uint16_t *fb);
 
+// Select the display shader applied during lcd_blit_gb. 0 off, 1 scanlines,
+// 2 dot-matrix grid. The effect tracks the source pixel grid as it scales.
+void lcd_set_shader(int mode);
+
 // Push a full LCD_W by LCD_H native-resolution frame to the panel. Used to draw
 // the mod menu crisply, bypassing the Game Boy upscale. Big-endian RGB565.
 void lcd_blit_full(const uint16_t *fb);

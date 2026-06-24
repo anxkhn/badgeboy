@@ -205,15 +205,51 @@ void lcd_fill(uint16_t colour) {
     gpio_put(LCD_CS, 1);
 }
 
+static int g_shader = 0;
+
+void lcd_set_shader(int mode) {
+    g_shader = mode;
+}
+
+// Scale a big-endian RGB565 value by num/16, per channel. Used by the shaders
+// to darken scanlines and the dot-matrix grid without leaving RGB565.
+static inline uint16_t dim16_be(uint16_t be, uint32_t num) {
+    uint16_t c = (uint16_t)((be >> 8) | (be << 8));
+    uint32_t r = (c >> 11) & 0x1F, g = (c >> 5) & 0x3F, b = c & 0x1F;
+    r = (r * num) >> 4;
+    g = (g * num) >> 4;
+    b = (b * num) >> 4;
+    c = (uint16_t)((r << 11) | (g << 5) | b);
+    return (uint16_t)((c >> 8) | (c << 8));
+}
+
+// Edge falloff weight in sixteenths: full (16) in the centre, tapering toward a
+// floor near each edge. Used to build the vignette.
+static int edge_weight(int i, int n) {
+    const int margin = 28, floor = 11;
+    int d = i < (n - 1 - i) ? i : (n - 1 - i);
+    if (d >= margin)
+        return 16;
+    return floor + (16 - floor) * d / margin;
+}
+
 void lcd_blit_gb(const uint16_t *fb) {
     // Nearest-neighbour scale of the 160x144 frame into the configured window.
     static uint16_t outline[GB_DRAW_W];
     static int colmap[GB_DRAW_W];
-    static bool colmap_ready = false;
-    if (!colmap_ready) {
-        for (int ox = 0; ox < GB_DRAW_W; ox++)
+    static bool coledge[GB_DRAW_W];
+    static int coldim[GB_DRAW_W];
+    static int rowdim[GB_DRAW_H];
+    static bool maps_ready = false;
+    if (!maps_ready) {
+        for (int ox = 0; ox < GB_DRAW_W; ox++) {
             colmap[ox] = (ox * GB_W) / GB_DRAW_W;
-        colmap_ready = true;
+            coledge[ox] = (ox == 0) || (colmap[ox] != colmap[ox - 1]);
+            coldim[ox] = edge_weight(ox, GB_DRAW_W);
+        }
+        for (int oy = 0; oy < GB_DRAW_H; oy++)
+            rowdim[oy] = edge_weight(oy, GB_DRAW_H);
+        maps_ready = true;
     }
 
     set_window(GB_X_OFF, GB_Y_OFF, GB_X_OFF + GB_DRAW_W - 1, GB_Y_OFF + GB_DRAW_H - 1);
@@ -223,10 +259,49 @@ void lcd_blit_gb(const uint16_t *fb) {
     wr_blocking(&c, 1);
     gpio_put(LCD_DC, 1);
 
+    int prev_src = -1;
     for (int oy = 0; oy < GB_DRAW_H; oy++) {
-        const uint16_t *srow = &fb[((oy * GB_H) / GB_DRAW_H) * GB_W];
-        for (int ox = 0; ox < GB_DRAW_W; ox++)
-            outline[ox] = srow[colmap[ox]];
+        int src = (oy * GB_H) / GB_DRAW_H;
+        const uint16_t *srow = &fb[src * GB_W];
+        bool scan_dark = (oy & 1);
+        bool row_edge = (src != prev_src);
+        switch (g_shader) {
+        case 1: // Scanlines: darken alternate physical rows.
+            for (int ox = 0; ox < GB_DRAW_W; ox++) {
+                uint16_t px = srow[colmap[ox]];
+                outline[ox] = scan_dark ? dim16_be(px, 10) : px;
+            }
+            break;
+        case 2: // Dot-matrix: darken the leading edge of each source cell.
+            for (int ox = 0; ox < GB_DRAW_W; ox++) {
+                uint16_t px = srow[colmap[ox]];
+                outline[ox] = (row_edge || coledge[ox]) ? dim16_be(px, 11) : px;
+            }
+            break;
+        case 3: // Retro LCD: dot-matrix grid and scanlines together.
+            for (int ox = 0; ox < GB_DRAW_W; ox++) {
+                uint16_t px = srow[colmap[ox]];
+                uint32_t f = 16;
+                if (scan_dark)
+                    f = 12;
+                if (row_edge || coledge[ox])
+                    f = (f * 12) >> 4;
+                outline[ox] = (f < 16) ? dim16_be(px, f) : px;
+            }
+            break;
+        case 4: // Vignette: darken toward the edges and corners.
+            for (int ox = 0; ox < GB_DRAW_W; ox++) {
+                uint16_t px = srow[colmap[ox]];
+                uint32_t f = ((uint32_t)coldim[ox] * rowdim[oy]) >> 4;
+                outline[ox] = (f < 16) ? dim16_be(px, f) : px;
+            }
+            break;
+        default: // 0: no shader.
+            for (int ox = 0; ox < GB_DRAW_W; ox++)
+                outline[ox] = srow[colmap[ox]];
+            break;
+        }
+        prev_src = src;
         wr_blocking((const uint8_t *)outline, GB_DRAW_W * 2);
     }
     gpio_put(LCD_CS, 1);

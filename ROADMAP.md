@@ -68,10 +68,12 @@ it carefully, since a bad write is how you brick the badge.
   correction, DMG palette, save-state slot selection, save and load state, and
   reset, with right-aligned values and a rounded selection highlight. This is the
   UI host that unlocks save-state slot selection. Verified on hardware.
-- [ ] **Display shaders.** Per-pixel effects in the scaling blit: scanlines and a
-  dot-matrix or LCD grid overlay, alongside the GBC correction from Tier 1. There
-  is no GPU, so these are CPU-side passes; PSRAM holds the effect buffers. Costs
-  throughput, most visible in fullscreen, so they are toggleable from the menu.
+- [x] **Display shaders.** Per-pixel effects applied during the scaling blit:
+  scanlines, a dot-matrix LCD grid, a combined retro LCD, and a vignette, each
+  tracking the source pixel grid as it scales. There is no GPU, so these are
+  CPU-side passes folded into the existing nearest-neighbour upscale. They are
+  selected from the in-game menu and are most visible in fullscreen. Verified on
+  hardware.
 
 ## Tier 4: requires storage plus a launcher and asset management
 

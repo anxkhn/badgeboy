@@ -71,7 +71,7 @@ endif()
 #   GBC_COLOR_CORRECTION: default state of CGB color correction, 0 or 1.
 #     It can also be toggled live with C+HOME.
 # ---------------------------------------------------------------------------
-set(DMG_PALETTE "0" CACHE STRING "DMG palette index 0..3")
+set(DMG_PALETTE "2" CACHE STRING "DMG palette index 0..3")
 set(GBC_COLOR_CORRECTION "1" CACHE STRING "Default CGB color correction 0 or 1")
 
 # ---------------------------------------------------------------------------

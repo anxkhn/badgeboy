@@ -3,6 +3,27 @@
 All notable changes to this project are documented here. The format is based on
 Keep a Changelog, and the project follows semantic versioning.
 
+## [0.6.0] - 2026-06-24
+
+Adds display shaders and corrects the automatic cartridge save.
+
+### Added
+
+- Display shaders, selectable from the in-game menu: scanlines, a dot-matrix LCD
+  grid, a combined retro LCD, and a vignette. Each is a CPU-side pass folded into
+  the scaling blit and tracks the source pixel grid as it scales.
+
+### Changed
+
+- The default monochrome palette is now high-contrast mono rather than green.
+
+### Fixed
+
+- The automatic cartridge save committed to flash every few seconds on games that
+  write save RAM continuously (such as an in-game clock), which was noisy and wore
+  the flash. Commits are now rate limited to at most once per 30 seconds, and the
+  noisy "Game saved" toast is replaced by a small, brief corner dot.
+
 ## [0.5.0] - 2026-06-24
 
 Adds an in-game mod menu and a round of UI and tooling work.
@@ -121,6 +142,7 @@ playable on the badge.
 - Cartridge saves are volatile and lost on power off.
 - One embedded ROM per build; no on-device ROM browser yet.
 
+[0.6.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.6.0
 [0.5.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.4.0
 [0.3.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.3.0

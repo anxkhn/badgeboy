@@ -6,11 +6,11 @@ A Game Boy and Game Boy Color emulator for the GitHub Universe 2025 badge
 firmware, drives the badge's 8-bit parallel ST7789 display through PIO and DMA,
 and reads the five front buttons for input.
 
-Version 0.5.0. Runs on hardware: a Game Boy Color title boots, renders full
+Version 0.6.0. Runs on hardware: a Game Boy Color title boots, renders full
 screen, and is playable, with color correction, fast-forward, battery and
-save-state saves, and a native-resolution in-game mod menu.
+save-state saves, display shaders, and a native-resolution in-game mod menu.
 
-![status](https://img.shields.io/badge/status-v0.5.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
+![status](https://img.shields.io/badge/status-v0.6.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
 
 ## What it does
 
@@ -22,6 +22,7 @@ save-state saves, and a native-resolution in-game mod menu.
 - Battery-backed cartridge saves persisted to flash, reloaded on boot.
 - Save-state snapshots with multiple slots: capture and restore the exact moment.
 - A native-resolution in-game mod menu (HOME+C) for all of the above.
+- Display shaders: scanlines, dot-matrix grid, retro LCD, and vignette.
 - Four selectable palettes for monochrome Game Boy games.
 - Embeds one ROM of your choice into flash at build time.
 - Maps the five front buttons to the eight Game Boy inputs using a shift modifier.
@@ -37,7 +38,6 @@ save-state saves, and a native-resolution in-game mod menu.
 - No Game Boy Advance. GBA is well beyond the RP2350 and is out of scope.
 - No on-device ROM browser yet. One ROM is embedded per build. A multi-game
   launcher is on the roadmap.
-- No display shaders yet (scanlines, dot-matrix grid). On the roadmap.
 
 ## Requirements
 

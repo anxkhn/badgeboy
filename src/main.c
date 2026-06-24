@@ -87,6 +87,7 @@ static void gb_err(struct gb_s *gb, const enum gb_error_e e, const uint16_t a) {
 // Live emulator settings the menu adjusts.
 static int g_speed = 0;       // 0 normal, 1 two times, 2 maximum
 static int g_slot = 0;        // selected save-state slot
+static int g_shader = 0;      // 0 off, 1 scanlines, 2 dot-matrix
 static uint32_t g_rom_id = 0; // set in main, used by save and load
 
 // A short on-screen message shown for a moment after an action (save, load).
@@ -96,6 +97,10 @@ static void toast(const char *m) {
     snprintf(g_toast, sizeof(g_toast), "%s", m);
     g_toast_until = time_us_32() + 1200000;
 }
+
+// The automatic cartridge save flashes a small dot rather than a toast, since on
+// some games it fires often and a text message would be a constant distraction.
+static uint32_t g_savedot_until = 0;
 
 static void draw_line(struct gb_s *gb, const uint8_t pixels[160],
                       const uint_fast8_t line); // defined below
@@ -231,6 +236,14 @@ static void draw_text(uint16_t *fb, int x0, int y0, const char *s, uint16_t col)
     }
 }
 
+// A small filled dot in the top-right corner: the quiet auto-save indicator.
+static void draw_dot(uint16_t *fb, uint16_t col) {
+    uint16_t sw = (uint16_t)((col >> 8) | (col << 8));
+    for (int y = 3; y < 7; y++)
+        for (int x = GB_W - 7; x < GB_W - 3; x++)
+            fb[y * GB_W + x] = sw;
+}
+
 // Native-resolution drawing into menu_fb (320x240, byte-swapped RGB565).
 static void m_fill(int x, int y, int w, int h, uint16_t col) {
     uint16_t be = (uint16_t)((col >> 8) | (col << 8));
@@ -337,6 +350,7 @@ enum {
     MI_SPEED,
     MI_COLOR,
     MI_PALETTE,
+    MI_DISPLAY,
     MI_SLOT,
     MI_SAVE,
     MI_LOAD,
@@ -364,6 +378,8 @@ static const char *menu_name(int item) {
         return "Color filter";
     case MI_PALETTE:
         return "Palette";
+    case MI_DISPLAY:
+        return "Display";
     case MI_SLOT:
         return "Save slot";
     case MI_SAVE:
@@ -389,6 +405,12 @@ static void menu_value(int item, char *out, int n) {
     case MI_PALETTE:
         snprintf(out, n, "%s", dmg_pal_names[dmg_pal_idx]);
         break;
+    case MI_DISPLAY: {
+        const char *shader_s[5] = {"Off", "Scanlines", "Dot-matrix", "Retro LCD",
+                                   "Vignette"};
+        snprintf(out, n, "%s", shader_s[g_shader]);
+        break;
+    }
     case MI_SLOT:
         snprintf(out, n, "%d", g_slot);
         break;
@@ -411,6 +433,10 @@ static bool menu_activate(int dir) {
         break;
     case MI_PALETTE:
         dmg_pal_idx = (dmg_pal_idx + 4 + dir) % 4;
+        break;
+    case MI_DISPLAY:
+        g_shader = (g_shader + 5 + dir) % 5;
+        lcd_set_shader(g_shader);
         break;
     case MI_SLOT:
         g_slot = (g_slot + STATE_SLOTS + dir) % STATE_SLOTS;
@@ -522,8 +548,9 @@ static void menu_step(void) {
     }
     m_fill(0, 52, LCD_W, 1, C_CARD);
 
-    // Item list.
-    const int top = 56, rh = 20;
+    // Item list. Sized so the longest case (nine items on a DMG game) fits
+    // between the header and footer without crowding the Color case.
+    const int top = 54, rh = 18;
     int row = 0;
     for (int i = 0; i < MI_COUNT; i++) {
         if (!menu_item_visible(i))
@@ -534,23 +561,23 @@ static void menu_step(void) {
         uint16_t name_c = sel ? C_TEXT : C_DIM;
         uint16_t val_c = sel ? C_ACCENT : C_FAINT;
         if (sel) {
-            m_round(12, y - 1, LCD_W - 24, rh - 2, C_CARD, 6);
-            m_round(16, y + 3, 4, rh - 10, C_ACCENT, 2);
+            m_round(12, y, LCD_W - 24, rh - 2, C_CARD, 6);
+            m_round(16, y + 4, 4, rh - 10, C_ACCENT, 2);
         }
-        m_text(28, y + 3, menu_name(i), name_c, 1);
+        m_text(28, y + 2, menu_name(i), name_c, 1);
         char val[16];
         menu_value(i, val, sizeof(val));
         if (val[0])
-            m_text(LCD_W - 24 - m_text_w(val, 1), y + 3, val, val_c, 1);
+            m_text(LCD_W - 24 - m_text_w(val, 1), y + 2, val, val_c, 1);
     }
 
     // Footer: a status line after an action, otherwise control hints.
-    m_fill(16, LCD_H - 24, LCD_W - 32, 1, C_CARD);
+    m_fill(16, LCD_H - 22, LCD_W - 32, 1, C_CARD);
     if (g_status[0]) {
-        m_text((LCD_W - m_text_w(g_status, 1)) / 2, LCD_H - 18, g_status, C_TEAL, 1);
+        m_text((LCD_W - m_text_w(g_status, 1)) / 2, LCD_H - 16, g_status, C_TEAL, 1);
     } else {
         const char *hint = "Up/Dn  A select  C back  B close";
-        m_text((LCD_W - m_text_w(hint, 1)) / 2, LCD_H - 18, hint, C_FAINT, 1);
+        m_text((LCD_W - m_text_w(hint, 1)) / 2, LCD_H - 16, hint, C_FAINT, 1);
     }
 
     if (g_menu_open == false)
@@ -674,6 +701,10 @@ int main(void) {
         if (time_us_32() < g_toast_until)
             draw_text(priv.fb, 5, GB_H - FONT_H - 2, g_toast, 0x07FF);
 
+        // The quiet auto-save dot, shown briefly after a flash commit.
+        if (time_us_32() < g_savedot_until)
+            draw_dot(priv.fb, 0x06D8);
+
         lcd_blit_gb(priv.fb);
 
         // Take a snapshot: this briefly freezes while the slot is written.
@@ -687,16 +718,22 @@ int main(void) {
         }
 
         // The cartridge battery save persists automatically once game writes
-        // have settled for 1.5 s. A CRC check skips redundant writes to limit
-        // flash wear. The flash program briefly freezes the emulator.
-        bool settled = ram_dirty && (time_us_32() - ram_write_us > 1500000);
-        if (save_size && settled) {
+        // have settled for 1.5 s. Some games write save RAM continuously (for an
+        // in-game clock), so commits are rate limited to at most one per 30 s to
+        // bound flash wear, and a CRC check skips writes when nothing changed.
+        // Each commit briefly freezes the emulator while the sector is erased.
+        static uint32_t last_autosave_us = 0;
+        uint32_t now = time_us_32();
+        bool settled = ram_dirty && (now - ram_write_us > 1500000);
+        bool throttled = last_autosave_us && (now - last_autosave_us < 30000000);
+        if (save_size && settled && !throttled) {
             uint32_t crc = save_crc32(priv.cart_ram, save_size);
             ram_dirty = false;
             if (crc != saved_crc) {
                 save_store(priv.cart_ram, save_size, rid);
                 saved_crc = crc;
-                toast("Game saved");
+                last_autosave_us = time_us_32();
+                g_savedot_until = last_autosave_us + 800000;
             }
         }
 
