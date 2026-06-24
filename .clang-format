@@ -1,0 +1,19 @@
+---
+# BadgeBoy C formatting. Run with: ./tools/format.sh
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 88
+BreakBeforeBraces: Attach
+PointerAlignment: Right
+SpaceBeforeParens: ControlStatements
+AlignTrailingComments: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+KeepEmptyLinesAtTheStartOfBlocks: false
+# The Peanut-GB includes are order-sensitive (feature macros and gb_rom.h must
+# precede peanut_gb.h), so never reorder includes.
+SortIncludes: false
