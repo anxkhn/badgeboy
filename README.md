@@ -6,16 +6,19 @@ A Game Boy and Game Boy Color emulator for the GitHub Universe 2025 badge
 firmware, drives the badge's 8-bit parallel ST7789 display through PIO and DMA,
 and reads the five front buttons for input.
 
-Version 0.1.0. The core path works on hardware: a Game Boy Color title boots,
-renders full screen, and is playable.
+Version 0.2.0. Runs on hardware: a Game Boy Color title boots, renders full
+screen, and is playable, with color correction and fast-forward.
 
-![status](https://img.shields.io/badge/status-v0.1.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
+![status](https://img.shields.io/badge/status-v0.2.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
 
 ## What it does
 
 - Emulates original Game Boy (DMG) and Game Boy Color (CGB) titles.
 - Renders to the badge's 320x240 ST7789 panel with three selectable scaling
   modes: full screen, correct aspect ratio, or native centered.
+- Game Boy Color color correction that matches the real CGB LCD, toggleable live.
+- Latched fast-forward (2x and maximum) with an on-screen speed indicator.
+- Four selectable palettes for monochrome Game Boy games.
 - Embeds one ROM of your choice into flash at build time.
 - Maps the five front buttons to the eight Game Boy inputs using a shift modifier.
 

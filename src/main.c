@@ -123,6 +123,24 @@ static void buttons_init(void) {
 
 static inline bool down(int pin) { return !gpio_get(pin); }
 
+// Draw a small filled block into the byte-swapped framebuffer.
+static void put_block(uint16_t *fb, int x0, int y0, int w, int h, uint16_t col) {
+    uint16_t sw = (uint16_t)((col >> 8) | (col << 8));
+    for (int y = y0; y < y0 + h && y < GB_H; y++)
+        for (int x = x0; x < x0 + w && x < GB_W; x++)
+            fb[y * GB_W + x] = sw;
+}
+
+// On-screen status overlay drawn into the top-left of the frame: one to three
+// bars for the speed level (green, yellow, red), and a marker for the color
+// correction state (cyan on, grey off).
+static void draw_indicator(uint16_t *fb, int speed, bool cc) {
+    const uint16_t speed_col[3] = { 0x07E0, 0xFFE0, 0xF800 };
+    for (int i = 0; i <= speed; i++)
+        put_block(fb, 4 + i * 8, 4, 6, 6, speed_col[speed]);
+    put_block(fb, 4, 14, 6, 6, cc ? 0x07FF : 0x8410);
+}
+
 // Map the five front buttons to the eight Game Boy inputs. C is a shift
 // modifier: holding it remaps UP/DOWN/A/B to Left/Right/Start/Select, which
 // gives access to all eight inputs from five physical buttons.
@@ -162,35 +180,52 @@ int main(void) {
 
     // HOME is a function modifier, like a Fn key. While HOME is held the front
     // buttons control the emulator instead of the game, and their effect is
-    // latched, so a speed change persists after the buttons are released:
+    // latched, so a change persists after the buttons are released:
     //   HOME + A  cycle speed: normal -> 2x -> max -> normal
     //   HOME + B  toggle GBC color correction
+    //
+    // Fast-forward runs several emulated frames per displayed frame and skips
+    // rendering and the (blocking) blit on the intermediate frames, so it speeds
+    // up even though the display blit is the per-frame bottleneck.
     const uint32_t frame_us = 16743;   // 59.7 Hz
+    const int frames_per_blit[3] = { 1, 2, 6 };
     int  speed = 0;                    // 0 normal, 1 two times, 2 maximum
     bool prev_a = false, prev_b = false;
+    uint32_t indicator_until = 0;
 
     while (1) {
         uint32_t t0 = time_us_32();
 
+        uint8_t jp;
         if (down(BTN_HOME)) {
             bool a = down(BTN_A), b = down(BTN_B);
-            if (a && !prev_a) speed = (speed + 1) % 3;
-            if (b && !prev_b) color_correct = !color_correct;
+            if (a && !prev_a) { speed = (speed + 1) % 3; indicator_until = t0 + 1500000; }
+            if (b && !prev_b) { color_correct = !color_correct; indicator_until = t0 + 1500000; }
             prev_a = a;
             prev_b = b;
-            gb.direct.joypad = 0xFF;    // no game input while in function mode
+            jp = 0xFF;                  // no game input while in function mode
         } else {
             prev_a = prev_b = false;
-            gb.direct.joypad = read_joypad();
+            jp = read_joypad();
+        }
+        gb.direct.joypad = jp;
+
+        int n = frames_per_blit[speed];
+        for (int i = 0; i < n; i++) {
+            // Render only the final emulated frame of the batch.
+            gb.display.lcd_draw_line = (i == n - 1) ? &draw_line : NULL;
+            gb_run_frame(&gb);
         }
 
-        gb.direct.frame_skip = (speed == 2) ? 1 : 0;
-        gb_run_frame(&gb);
+        if (speed != 0 || t0 < indicator_until)
+            draw_indicator(priv.fb, speed, color_correct);
+
         lcd_blit_gb(priv.fb);
 
+        // Speed 0 and 2x both pace to one 59.7 Hz display frame; 2x simply runs
+        // two emulated frames inside that window. Maximum speed does not pace.
         if (speed != 2) {
-            uint32_t target = (speed == 1) ? (frame_us / 2) : frame_us;
-            int32_t rem = (int32_t)target - (int32_t)(time_us_32() - t0);
+            int32_t rem = (int32_t)frame_us - (int32_t)(time_us_32() - t0);
             if (rem > 0) sleep_us(rem);
         }
     }

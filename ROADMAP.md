@@ -12,22 +12,27 @@ Verified hardware that shapes this list: RP2350B, 16 MB flash, 8 MB PSRAM
 
 ## Tier 1: software only, no new storage or UI
 
-- [~] **Fast-forward.** A latched speed control, not a hold. HOME acts as a
+Done in v0.2.0.
+
+- [x] **Fast-forward.** A latched speed control, not a hold. HOME acts as a
   function modifier: HOME+A cycles normal, 2x, and maximum speed, and the choice
-  persists after release. Maximum drops the frame-time throttle and enables
-  Peanut-GB frame skip, so it runs as fast as the hardware allows rather than a
-  fixed multiple. Timing-loop change in `main.c`.
-- [~] **GBC color correction.** Map raw CGB colors to the washed, hardware
+  persists after release. It runs several emulated frames per displayed frame and
+  skips rendering and the blocking blit on the intermediate frames, so it speeds
+  up even though the display blit is the per-frame bottleneck. An on-screen
+  indicator shows the current speed (one to three colored bars). Verified on
+  hardware.
+- [x] **GBC color correction.** Map raw CGB colors to the washed, hardware
   accurate LCD palette. Uses the Gambatte integer matrix in RGB555 space, which
   is shifts and adds only, no division, no clamping, with outputs already in the
   0 to 31 range:
   `R = (13r + 2g + b) >> 4`, `G = (3g + b) >> 2`, `B = (2g + 14b) >> 4`.
-  Applied during the RGB565 conversion in `draw_line`. Toggle at runtime with
-  HOME+B so the effect can be compared on hardware in one flash.
-- [~] **DMG palette selection.** A set of four-shade palettes (authentic green,
-  pocket grey, and others) for original Game Boy titles, selected at build time.
-  Later this becomes a runtime choice once the in-game menu exists, and can be
-  auto-selected per game with `gb_colour_hash`.
+  Applied during the RGB565 conversion in `draw_line`. Toggled at runtime with
+  HOME+B, with an on-screen marker for the state. Verified on hardware.
+- [x] **DMG palette selection.** Four four-shade palettes (authentic green,
+  pocket grey, high-contrast mono, dusk amber) for original Game Boy titles,
+  selected at build time with `DMG_PALETTE`. Later this becomes a runtime choice
+  once the in-game menu exists, and can be auto-selected per game with
+  `gb_colour_hash`.
 
 ## Tier 2: requires a flash storage layer (shared prerequisite)
 

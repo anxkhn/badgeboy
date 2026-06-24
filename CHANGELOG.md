@@ -3,17 +3,32 @@
 All notable changes to this project are documented here. The format is based on
 Keep a Changelog, and the project follows semantic versioning.
 
-## [Unreleased]
+## [0.2.0] - 2026-06-24
+
+Adds the first round of playability features, all verified on hardware.
+
+### Added
+
+- Game Boy Color color correction using the Gambatte integer matrix, so colors
+  match the real CGB LCD instead of the oversaturated raw values. On by default
+  (`-DGBC_COLOR_CORRECTION`) and toggleable live with HOME+B.
+- Latched fast-forward. HOME acts as a function modifier; HOME+A cycles normal,
+  2x, and maximum speed. Fast-forward runs several emulated frames per displayed
+  frame and skips the blocking blit on intermediate frames, so it speeds up
+  despite the blit being the per-frame bottleneck.
+- On-screen status indicator: one to three colored bars for the speed level and
+  a marker for the color correction state.
+- Four selectable palettes for monochrome (DMG) games, chosen at build time with
+  `-DDMG_PALETTE=0..3`.
 
 ### Changed
 
+- HOME is now a function modifier rather than a reserved button.
+- Hardened `CMakeLists.txt` so a plain `cmake` invocation selects the correct
+  RP2350 CPU flags (set `PICO_PLATFORM` and `PICO_BOARD` before `project()`).
 - Documented the verified module memory and radio: 16 MB flash, 8 MB PSRAM
-  (CS GPIO 47), and a CYW43439 WiFi and Bluetooth radio, confirmed from the stock
-  firmware and the board profile. See `docs/HARDWARE.md`.
-- Reworked the roadmap in `AGENTS.md` into effort-ordered tiers covering
-  fast-forward, color correction and palettes, a flash storage layer, persistent
-  saves, save-state slots, an in-game menu, display shaders, a ROM browser, NES
-  support, a MonaOS dual-boot launcher, and the hardware constraints on audio.
+  (CS GPIO 47), and a CYW43439 WiFi and Bluetooth radio. See `docs/HARDWARE.md`.
+- Moved the roadmap into `ROADMAP.md`, tiered by effort with status markers.
 
 ## [0.1.0] - 2026-06-24
 
@@ -44,4 +59,5 @@ playable on the badge.
 - Cartridge saves are volatile and lost on power off.
 - One embedded ROM per build; no on-device ROM browser yet.
 
+[0.2.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.2.0
 [0.1.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.1.0
