@@ -1,0 +1,28 @@
+# Build artifacts
+/build/
+*.uf2
+*.elf
+*.bin
+*.hex
+*.dis
+*.map
+
+# Generated ROM headers (contain copyrighted game data; never commit)
+/build/generated/
+src/gb_rom.h
+gb_rom.h
+
+# ROM files (supply your own; do not commit)
+*.gb
+*.gbc
+*.gba
+*.sav
+
+# Local Pico SDK checkout, if placed inside the tree
+/pico-sdk/
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store

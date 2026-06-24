@@ -1,0 +1,152 @@
+# BadgeBoy
+
+A Game Boy and Game Boy Color emulator for the GitHub Universe 2025 badge
+(a custom Pimoroni Tufty 2350, RP2350B). It runs the
+[Peanut-GB](https://github.com/deltabeard/Peanut-GB) core as bare-metal RP2350
+firmware, drives the badge's 8-bit parallel ST7789 display through PIO and DMA,
+and reads the five front buttons for input.
+
+Version 0.1.0. The core path works on hardware: a Game Boy Color title boots,
+renders full screen, and is playable.
+
+![status](https://img.shields.io/badge/status-v0.1.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
+
+## What it does
+
+- Emulates original Game Boy (DMG) and Game Boy Color (CGB) titles.
+- Renders to the badge's 320x240 ST7789 panel with three selectable scaling
+  modes: full screen, correct aspect ratio, or native centered.
+- Embeds one ROM of your choice into flash at build time.
+- Maps the five front buttons to the eight Game Boy inputs using a shift modifier.
+
+This is a custom firmware image. Flashing it replaces the stock MonaOS launcher.
+MonaOS can be restored at any time (see [docs/FLASHING.md](docs/FLASHING.md)).
+
+## What it does not do
+
+- No audio. The badge has no speaker, so sound emulation is compiled out.
+- No Game Boy Advance. GBA is well beyond the RP2350 and is out of scope.
+- No on-device ROM browser yet. One ROM is embedded per build. A multi-game
+  launcher is on the roadmap.
+- Saves are currently held in RAM and are lost on power off. Battery-backed
+  persistence to flash is on the roadmap.
+
+## Requirements
+
+You need an ARM bare-metal toolchain and the usual build tools. The Pico SDK is
+fetched automatically on first build.
+
+On Debian or Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install -y gcc-arm-none-eabi cmake ninja-build build-essential python3
+```
+
+| Tool                 | Purpose                                  |
+|----------------------|------------------------------------------|
+| `gcc-arm-none-eabi`  | cross compiler for the RP2350 (Cortex-M33) |
+| `cmake` (3.13+)      | build configuration                      |
+| `ninja-build`        | build backend                            |
+| `build-essential`    | host compiler and make, used by the SDK  |
+| `python3`            | ROM to C header conversion               |
+| `git`                | fetches the Pico SDK on first build      |
+
+To read the badge pin map yourself you also need `mpremote`
+(`pip install mpremote`). See [docs/HARDWARE.md](docs/HARDWARE.md).
+
+## Quick start
+
+Build with your own legally obtained ROM:
+
+```bash
+git clone https://github.com/anxkhn/badgeboy.git
+cd badgeboy
+./build.sh /absolute/path/to/your_game.gbc fullscreen
+```
+
+The first build clones the Pico SDK into `~/pico-sdk`. The result is
+`build/badgeboy.uf2`.
+
+Flash it:
+
+1. On the badge, hold BOOTSEL, tap RESET, release BOOTSEL. The badge mounts as
+   a drive named `RP2350`.
+2. Copy the image across:
+   ```bash
+   cp build/badgeboy.uf2 /run/media/$USER/RP2350/
+   ```
+
+The badge reboots into the emulator. Full instructions, including how to put
+MonaOS back, are in [docs/FLASHING.md](docs/FLASHING.md).
+
+## Controls
+
+The badge has five front buttons but the Game Boy needs eight inputs (Up, Down,
+Left, Right, A, B, Start, Select). BadgeBoy uses C as a shift modifier: while C
+is held, UP, DOWN, A, and B are remapped to the four inputs that have no
+dedicated button. This gives access to all eight inputs from five buttons.
+
+| Button   | Default | With C held |
+|----------|---------|-------------|
+| UP       | Up      | Left        |
+| DOWN     | Down    | Right       |
+| A        | A       | Start       |
+| B        | B       | Select      |
+| C        | shift modifier | shift modifier |
+| HOME     | reserved (back button) | |
+
+## Customization
+
+Two options are selected at build time.
+
+- ROM: `-DGBC_ROM=/abs/path/game.gbc`, or pass the path as the first argument
+  to `build.sh`.
+- Display mode: `-DGBC_DISPLAY_MODE=FULLSCREEN|ASPECT|CENTERED`, or pass it as
+  the second argument to `build.sh`.
+
+```bash
+./build.sh ~/roms/game.gbc aspect      # correct aspect ratio, thin side borders
+./build.sh ~/roms/game.gbc centered    # native 160x144 in the centre
+```
+
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
+
+## Documentation
+
+| Document | Contents |
+|----------|----------|
+| [docs/HARDWARE.md](docs/HARDWARE.md)         | Verified badge pin map, display bus, RP2350B notes |
+| [docs/BUILDING.md](docs/BUILDING.md)         | Toolchain, SDK, build options |
+| [docs/FLASHING.md](docs/FLASHING.md)         | Flashing and restoring MonaOS |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | ROM selection, display modes, controls |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the firmware is put together |
+| [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Emulation core choice and known limits |
+| [AGENTS.md](AGENTS.md)                        | Working context for contributors and coding agents |
+
+## Contributing
+
+Contributions are welcome: bug reports, hardware findings, documentation, and
+code. Because this is firmware for a specific device, most changes need testing
+on the badge. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and
+[AGENTS.md](AGENTS.md) for working context and the roadmap.
+
+## Legal
+
+BadgeBoy ships no game ROMs. Supply only software you legally own. Generated ROM
+headers and built images contain copyrighted data and are excluded from version
+control by `.gitignore`. Do not commit or distribute them.
+
+## Acknowledgements
+
+- [Peanut-GB](https://github.com/deltabeard/Peanut-GB) by Mahyar Koshkouei, and
+  the `cgb` branch contributors, for the emulator core (MIT).
+- Pimoroni for the Tufty 2350 hardware and the ST7789 parallel driver design
+  that the display layer is modelled on.
+- The Raspberry Pi Pico SDK team.
+
+## License
+
+GNU General Public License v3.0 or later. See [LICENSE](LICENSE). The vendored
+Peanut-GB core remains under its own MIT license; see
+[third_party/peanut-gb/LICENSE](third_party/peanut-gb/LICENSE).

@@ -1,0 +1,18 @@
+; BadgeBoy - Game Boy / Game Boy Color emulator for the GitHub Universe badge
+; Copyright (C) 2026 Anas Khan
+; SPDX-License-Identifier: GPL-3.0-or-later
+;
+; 8080 parallel write engine for the ST7789. One byte per FIFO entry is shifted
+; onto the 8 data pins. WR is driven low while the byte is presented, then high
+; to latch it (the ST7789 8080 bus latches on the WR rising edge).
+;
+; Configured in C as: out pins = 8 data pins from LCD_D0, side-set = WR,
+; autopull, OUT shift right, threshold 8.
+
+.program st7789_parallel
+.side_set 1
+
+.wrap_target
+    out pins, 8   side 0   ; present a byte, WR low
+    nop           side 1   ; WR high, panel latches the byte
+.wrap
