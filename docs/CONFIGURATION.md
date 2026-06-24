@@ -96,6 +96,7 @@ and the effect is latched (it persists after release):
 |----------|--------|
 | HOME + A | cycle speed: normal, 2x, maximum |
 | HOME + B | toggle GBC color correction |
+| HOME + UP | save cartridge RAM to flash now |
 
 The in-game mapping is in `read_joypad()` and the HOME function handling is in the
 main loop, both in `src/main.c`. The button GPIOs are fixed by hardware and live

@@ -106,6 +106,10 @@ set after you let go:
 - **HOME + A**: cycle speed, normal then 2x then maximum then back to normal.
 - **HOME + B**: toggle Game Boy Color color correction, to compare the corrected
   and raw palettes live.
+- **HOME + UP**: save the cartridge RAM to flash now.
+
+Battery-backed games also save automatically a moment after the in-game save
+finishes, and the save is reloaded on the next boot.
 
 ## Customization
 

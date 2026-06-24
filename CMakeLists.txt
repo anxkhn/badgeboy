@@ -80,6 +80,7 @@ set(GBC_COLOR_CORRECTION "1" CACHE STRING "Default CGB color correction 0 or 1")
 add_executable(badgeboy
   src/main.c
   src/tufty_lcd.c
+  src/save.c
 )
 add_dependencies(badgeboy generate_rom)
 
@@ -104,6 +105,8 @@ target_link_libraries(badgeboy
   hardware_dma
   hardware_pwm
   hardware_gpio
+  hardware_flash
+  hardware_sync
 )
 
 pico_enable_stdio_usb(badgeboy 1)

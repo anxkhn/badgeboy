@@ -9,6 +9,7 @@
 
 #include "config.h"
 #include "tufty_lcd.h"
+#include "save.h"
 
 // Peanut-GB build options. These must be set before including the core.
 #define ENABLE_LCD              1
@@ -22,11 +23,16 @@ enum { JOYP_A=0x01, JOYP_B=0x02, JOYP_SELECT=0x04, JOYP_START=0x08,
        JOYP_RIGHT=0x10, JOYP_LEFT=0x20, JOYP_UP=0x40, JOYP_DOWN=0x80 };
 
 struct priv_t {
-    uint8_t  cart_ram[32 * 1024];   // cartridge save RAM (volatile for now)
+    uint8_t  cart_ram[32 * 1024];   // cartridge save RAM, persisted to flash
     uint16_t fb[GB_W * GB_H];       // RGB565 framebuffer, byte swapped for the panel
 };
 static struct priv_t priv;
 static struct gb_s   gb;
+
+// Set whenever the game writes cartridge RAM, with the time of the last write.
+// The main loop persists the save to flash once writes have settled.
+static volatile bool     ram_dirty = false;
+static volatile uint32_t ram_write_us = 0;
 
 static uint8_t rom_read(struct gb_s *gb, const uint_fast32_t addr) {
     (void)gb;
@@ -40,7 +46,22 @@ static uint8_t ram_read(struct gb_s *gb, const uint_fast32_t addr) {
 
 static void ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint8_t v) {
     struct priv_t *p = gb->direct.priv;
-    if (addr < sizeof(p->cart_ram)) p->cart_ram[addr] = v;
+    if (addr < sizeof(p->cart_ram)) {
+        p->cart_ram[addr] = v;
+        ram_dirty = true;
+        ram_write_us = time_us_32();
+    }
+}
+
+// A stable id for the loaded ROM, hashed from its header (title and checksums).
+// Used to tag saves so one game never loads another game's save.
+static uint32_t rom_id(void) {
+    uint32_t h = 2166136261u;          // FNV-1a
+    for (int i = 0x134; i <= 0x14F; i++) {
+        h ^= gb_rom[i];
+        h *= 16777619u;
+    }
+    return h;
 }
 
 static void gb_err(struct gb_s *gb, const enum gb_error_e e, const uint16_t a) {
@@ -178,11 +199,20 @@ int main(void) {
     gb_init_lcd(&gb, &draw_line);
     gb.direct.frame_skip = 0;
 
+    // Load this ROM's persisted cartridge save, if any. Battery-backed games
+    // report a non-zero save size; ROMs without battery RAM report zero.
+    uint32_t rid = rom_id();
+    uint32_t save_size = gb_get_save_size(&gb);
+    if (save_size > sizeof(priv.cart_ram)) save_size = sizeof(priv.cart_ram);
+    save_load(priv.cart_ram, save_size, rid);
+    uint32_t saved_crc = save_size ? save_crc32(priv.cart_ram, save_size) : 0;
+
     // HOME is a function modifier, like a Fn key. While HOME is held the front
     // buttons control the emulator instead of the game, and their effect is
     // latched, so a change persists after the buttons are released:
     //   HOME + A  cycle speed: normal -> 2x -> max -> normal
     //   HOME + B  toggle GBC color correction
+    //   HOME + UP save the cartridge RAM to flash now
     //
     // Fast-forward runs several emulated frames per displayed frame and skips
     // rendering and the (blocking) blit on the intermediate frames, so it speeds
@@ -190,7 +220,8 @@ int main(void) {
     const uint32_t frame_us = 16743;   // 59.7 Hz
     const int frames_per_blit[3] = { 1, 2, 6 };
     int  speed = 0;                    // 0 normal, 1 two times, 2 maximum
-    bool prev_a = false, prev_b = false;
+    bool prev_a = false, prev_b = false, prev_up = false;
+    bool force_save = false;
     uint32_t indicator_until = 0;
 
     while (1) {
@@ -198,14 +229,16 @@ int main(void) {
 
         uint8_t jp;
         if (down(BTN_HOME)) {
-            bool a = down(BTN_A), b = down(BTN_B);
-            if (a && !prev_a) { speed = (speed + 1) % 3; indicator_until = t0 + 1500000; }
-            if (b && !prev_b) { color_correct = !color_correct; indicator_until = t0 + 1500000; }
+            bool a = down(BTN_A), b = down(BTN_B), up = down(BTN_UP);
+            if (a  && !prev_a)  { speed = (speed + 1) % 3; indicator_until = t0 + 1500000; }
+            if (b  && !prev_b)  { color_correct = !color_correct; indicator_until = t0 + 1500000; }
+            if (up && !prev_up) { force_save = true; }
             prev_a = a;
             prev_b = b;
+            prev_up = up;
             jp = 0xFF;                  // no game input while in function mode
         } else {
-            prev_a = prev_b = false;
+            prev_a = prev_b = prev_up = false;
             jp = read_joypad();
         }
         gb.direct.joypad = jp;
@@ -221,6 +254,23 @@ int main(void) {
             draw_indicator(priv.fb, speed, color_correct);
 
         lcd_blit_gb(priv.fb);
+
+        // Persist the cartridge save when the player asks (HOME+UP) or once game
+        // writes have settled for 1.5 s. A CRC check skips redundant writes so
+        // flash wear stays low. The flash erase and program briefly freeze the
+        // emulator, so a marker is shown first.
+        bool settled = ram_dirty && (time_us_32() - ram_write_us > 1500000);
+        if (save_size && (force_save || settled)) {
+            uint32_t crc = save_crc32(priv.cart_ram, save_size);
+            ram_dirty = false;
+            if (force_save || crc != saved_crc) {
+                put_block(priv.fb, GB_W - 10, 4, 6, 6, 0xFFFF);
+                lcd_blit_gb(priv.fb);
+                save_store(priv.cart_ram, save_size, rid);
+                saved_crc = crc;
+            }
+            force_save = false;
+        }
 
         // Speed 0 and 2x both pace to one 59.7 Hz display frame; 2x simply runs
         // two emulated frames inside that window. Maximum speed does not pace.
