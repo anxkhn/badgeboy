@@ -6,25 +6,32 @@ A Game Boy and Game Boy Color emulator for the GitHub Universe 2025 badge
 firmware, drives the badge's 8-bit parallel ST7789 display through PIO and DMA,
 and reads the five front buttons for input.
 
-Version 0.6.0. Runs on hardware: a Game Boy Color title boots, renders full
+Version 0.7.0. Runs on hardware: a Game Boy Color title boots, renders full
 screen, and is playable, with color correction, fast-forward, battery and
-save-state saves, display shaders, and a native-resolution in-game mod menu.
+save-state saves, display shaders, brightness control, and a native-resolution
+in-game mod menu. An on-device launcher picks between a built-in game and games
+from a separately flashed ROM library, each with its own saves.
 
-![status](https://img.shields.io/badge/status-v0.6.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
+![status](https://img.shields.io/badge/status-v0.7.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
 
 ## What it does
 
 - Emulates original Game Boy (DMG) and Game Boy Color (CGB) titles.
+- On-device ROM browser: a built-in game plus games from a separately flashed
+  ROM library (the ROM pack), with soft-reset switching from the launcher.
 - Renders to the badge's 320x240 ST7789 panel with three selectable scaling
   modes: full screen, correct aspect ratio, or native centered.
 - Game Boy Color color correction that matches the real CGB LCD, toggleable live.
 - Latched fast-forward (2x and maximum).
-- Battery-backed cartridge saves persisted to flash, reloaded on boot.
+- Per-game battery saves persisted to flash and reloaded on boot, plus per-game
+  save-state slots, so each game keeps its own progress.
 - Save-state snapshots with multiple slots: capture and restore the exact moment.
-- A native-resolution in-game mod menu (HOME+C) for all of the above.
 - Display shaders: scanlines, dot-matrix grid, retro LCD, and vignette.
+- Brightness control over the hardware PWM backlight (9 levels).
+- A native-resolution in-game mod menu (HOME+C) for all of the above.
 - Four selectable palettes for monochrome Game Boy games.
-- Embeds one ROM of your choice into flash at build time.
+- Embeds one ROM of your choice into flash at build time as the launcher's first
+  game.
 - Maps the five front buttons to the eight Game Boy inputs using a shift modifier.
 
 > [!WARNING]
@@ -36,8 +43,6 @@ save-state saves, display shaders, and a native-resolution in-game mod menu.
 
 - No audio. The badge has no speaker, so sound emulation is compiled out.
 - No Game Boy Advance. GBA is well beyond the RP2350 and is out of scope.
-- No on-device ROM browser yet. One ROM is embedded per build. A multi-game
-  launcher is on the roadmap.
 
 ## Requirements
 
@@ -88,6 +93,23 @@ Flash it:
 The badge reboots into the emulator. Full instructions, including how to put
 MonaOS back, are in [docs/FLASHING.md](docs/FLASHING.md).
 
+## Multiple games
+
+The firmware is one flash image; the game library is a separate flash image (the
+ROM pack). The built-in ROM is the launcher's first game; pack games are added
+after it (up to 8 total, each with its own saves). Build a pack from your own
+legally obtained ROMs and flash it on its own, without rebuilding the firmware:
+
+```bash
+python3 tools/pack_roms.py -o games.uf2 game1.gb "game 2.gbc" ...
+cp games.uf2 /run/media/$USER/RP2350/      # BOOTSEL, exactly like the firmware
+```
+
+The pack writes only its own flash region, so it leaves the firmware and your
+saves intact. On boot, a single game launches straight in; with more than one,
+the launcher lists each game with a CGB or DMG tag and switches with a soft
+reset. See [docs/FLASHING.md](docs/FLASHING.md) and [docs/SAVES.md](docs/SAVES.md).
+
 ## Controls
 
 The badge has five front buttons but the Game Boy needs eight inputs (Up, Down,
@@ -117,11 +139,14 @@ set after you let go:
 
 > [!TIP]
 > The in-game menu collects everything in one place: speed, color correction, DMG
-> palette, the save-state slot, save and load state, and reset. While it is open
+> palette, Display (the shader pass: Off, Scanlines, Dot-matrix, Retro LCD,
+> Vignette), Brightness (9 levels, 20 to 100 percent), the save-state slot, save
+> and load state, reset, and Exit to menu (back to the launcher). While it is open
 > the game pauses; UP and DOWN move, A activates or steps a value forward, C steps
-> it back, and B closes.
+> it back, and B closes. Brightness drives the hardware PWM backlight.
 
-There are two independent kinds of save:
+There are two independent kinds of save, and each game keeps its own (see
+[docs/SAVES.md](docs/SAVES.md)):
 
 - **Battery save** is the game's own save (its in-game Save menu). BadgeBoy writes
   it to flash automatically a moment after you save, and reloads it on the next
@@ -140,7 +165,7 @@ Selected at build time.
 - Display mode: `-DGBC_DISPLAY_MODE=FULLSCREEN|ASPECT|CENTERED`, or pass it as
   the second argument to `build.sh`.
 - DMG palette for monochrome games: `-DDMG_PALETTE=0..3`
-  (0 green, 1 grey, 2 high-contrast, 3 amber).
+  (0 green, 1 grey, 2 high-contrast, 3 amber). The default is 2 (high-contrast).
 - GBC color correction default: `-DGBC_COLOR_CORRECTION=0|1`. It is on by default
   and can also be toggled live with C+HOME.
 
@@ -157,8 +182,9 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for details.
 |----------|----------|
 | [docs/HARDWARE.md](docs/HARDWARE.md)         | Verified badge pin map, display bus, RP2350B notes |
 | [docs/BUILDING.md](docs/BUILDING.md)         | Toolchain, SDK, build options |
-| [docs/FLASHING.md](docs/FLASHING.md)         | Flashing and restoring MonaOS |
-| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | ROM selection, display modes, controls |
+| [docs/FLASHING.md](docs/FLASHING.md)         | Flashing the firmware, a ROM pack, and restoring MonaOS |
+| [docs/CONFIGURATION.md](docs/CONFIGURATION.md) | ROM selection, ROM packs, display modes, controls, debug build |
+| [docs/SAVES.md](docs/SAVES.md)               | Battery saves, save states, per-game areas, troubleshooting |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the firmware is put together |
 | [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) | Emulation core choice and known limits |
 | [ROADMAP.md](ROADMAP.md)                     | Planned features, tiered by effort, with status |

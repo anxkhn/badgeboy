@@ -1,8 +1,10 @@
 # Architecture
 
-BadgeBoy is a single bare-metal application. One ROM is emulated by Peanut-GB,
+BadgeBoy is a single bare-metal application. A ROM is emulated by Peanut-GB,
 rendered to a framebuffer, and pushed to the ST7789 panel. There is no operating
-system, no scheduler, and no dynamic allocation in the run loop.
+system, no scheduler, and no dynamic allocation in the run loop. As of v0.7 the
+firmware hosts an on-device launcher: a built-in game plus any games from a
+separately flashed ROM pack, each with its own save area.
 
 ## Data flow
 
@@ -18,9 +20,73 @@ flowchart TD
 
 Input is read once per frame and written to the Peanut-GB joypad register.
 
+## Flash layout
+
+The 16 MB on-board flash is split into three independent regions, each flashed
+on its own. Offsets are from the start of flash (`0x10000000`, `XIP_BASE`) and
+are defined in `src/flash_layout.h`.
+
+```mermaid
+flowchart TB
+    subgraph FLASH["16 MB QSPI flash (XIP)"]
+        direction TB
+        FW["Firmware<br/>0x000000 to 0x400000<br/>4 MB reserved (firmware ~2.25 MB)"]
+        PACK["ROM pack<br/>0x400000 (ROMPACK_OFFSET) to 0xC80000<br/>~8.5 MB for games"]
+        SAVE["Per-game saves<br/>0xC80000 (GAMESAVE_BASE) to 0x1000000<br/>8 slots x 448 KiB = 3.5 MB"]
+    end
+    FW --- PACK --- SAVE
+```
+
+- **Firmware** (`0x000000` to `0x400000`): the `.uf2` built by `build.sh`. 4 MB
+  is reserved; the actual firmware is about 2.25 MB.
+- **ROM pack** (`0x400000`, `ROMPACK_OFFSET`, up to `0xC80000`): the game
+  library, flashed separately by `tools/pack_roms.py`. About 8.5 MB.
+- **Per-game saves** (`0xC80000`, `GAMESAVE_BASE`, to the top `0x1000000`): 8
+  game slots (`GAMESAVE_MAX`) of 448 KiB each. Each slot holds one 64 KiB
+  battery-save block plus three 128 KiB save-state slots. 8 times 448 KiB fills
+  exactly to the top of flash.
+
+The firmware and the ROM pack are separate flash images. Reflashing the game
+library writes only the pack region and leaves the firmware and the saves in
+place, and the reverse. See [FLASHING.md](FLASHING.md).
+
+### ROM pack format
+
+The pack is built on the host by `tools/pack_roms.py` and emitted directly as a
+flashable `.uf2`. It uses UF2 family id `0xe48bff57` (the RP2 "absolute"
+family), which the RP2350 BOOTSEL accepts and writes at the absolute pack
+address without disturbing the firmware. The tool derives clean display titles
+from the file names (stripping bracketed and parenthesized dump tags), marks CGB
+versus DMG, and 4 KiB-aligns each ROM.
+
+The on-flash format (little endian, see `src/flash_layout.h`) is a header
+`{magic 0x4B504242 "BBPK", version, count, reserved}`, then `count` entries
+`{char title[32], uint32 offset, uint32 size, uint8 flags (bit0 = CGB), pad}`,
+then the ROM data. The firmware reads the pack in place from memory-mapped flash
+(XIP); it is not copied to RAM. Parsing lives in `src/rompack.c`.
+
+## ROM browser and launcher
+
+`main.c` builds the game list at boot. The firmware's built-in ROM (the one
+embedded at build time via `GBC_ROM`) is game index 0; any pack games are
+appended after it. The total is capped at 8 so each game gets its own save area,
+keyed by launcher index.
+
+- With a single game, the firmware launches straight in.
+- With more than one game, or after Exit to menu, it shows the launcher, which
+  lists each game's title and a CGB or DMG tag.
+- Switching games is a soft reset: the emulator re-initialises in place via
+  `run_game()`, with no device reboot.
+
+Each launcher index selects its own per-game save area through
+`save_set_game(index)`, so games never overwrite one another's saves. See
+[SAVES.md](SAVES.md).
+
 ## Save and state flow
 
 Two independent persistence paths share one flash storage layer (`src/save.c`).
+Both operate on the active game's per-game save area, selected by
+`save_set_game(launcher_index)`.
 
 ```mermaid
 flowchart LR
@@ -28,15 +94,29 @@ flowchart LR
         IGS["In-game Save menu"] --> CRAM["cart RAM"]
         SNAP["HOME+UP / menu"] -.snapshot.-> GBS["whole gb_s + cart RAM"]
     end
-    subgraph flash["Reserved flash (top of 16 MB)"]
-        BAT["battery save<br/>64 KiB region"]
+    subgraph flash["Per-game area (one of 8, keyed by launcher index)"]
+        BAT["battery save<br/>64 KiB block"]
         ST["state slots<br/>3 x 128 KiB"]
     end
-    CRAM -->|auto-flush, CRC-gated| BAT
+    CRAM -->|auto-save, CRC-gated| BAT
     GBS -->|state_store| ST
     BAT -->|save_load on boot| CRAM
     ST -->|state_load, then relink| GBS
 ```
+
+Each game's saves live in its own 448 KiB slot in the flash region above the ROM
+pack (`GAMESAVE_BASE`), not in a single shared region. A battery save is stored
+as a header `{magic 0x56534242 "BBSV", version, rom_id, size}` followed by the
+SRAM bytes; `rom_id` is an FNV-1a hash of ROM header bytes `0x134` to `0x14F`, so
+a save never loads for the wrong game.
+
+The auto-save policy (`run_game` in `src/main.c`) commits the battery save to
+flash a short time after the game's SRAM writes settle (about 1.2 s of quiet),
+or after the data has been dirty for a few seconds for games that write SRAM
+continuously. It is rate limited to at most once every few seconds and skipped
+by a CRC check when nothing changed. Exit to menu force-flushes the battery save
+first. See [SAVES.md](SAVES.md) for the full mechanics and troubleshooting
+notes.
 
 ## Components
 
@@ -87,20 +167,28 @@ and Select are reachable without dedicated buttons.
 
 ### Main loop
 
-`main()` initialises stdio, the display, and the buttons, calls `gb_init` and
-`gb_init_lcd`, loads any battery save, then loops: read input, run one or more
-frames (fast-forward runs several per blit), blit, persist saves when due, and
-pace to roughly 59.7 Hz. HOME is a function modifier for speed, color correction,
-save states, and the menu; HOME+C opens the modal in-game menu, which pauses the
-game. If `gb_init` fails, the backlight pulses as a visible error signal.
+`main()` initialises stdio, the display, and the buttons, then builds the game
+list (built-in game index 0 plus any pack games from `src/rompack.c`). With a
+single game it auto-launches; with more than one, or after Exit to menu, it shows
+the launcher and lets the player pick. The chosen game runs in `run_game()`,
+which selects the per-game save area, calls `gb_init` and `gb_init_lcd`, loads
+any battery save, then loops: read input, run one or more frames (fast-forward
+runs several per blit), blit, persist saves when due, and pace to roughly
+59.7 Hz. HOME is a function modifier for speed, color correction, save states,
+and the menu; HOME+C opens the modal in-game menu, which pauses the game and
+includes Exit to menu (which flushes the battery save and returns to the
+launcher). Switching games is a soft reset in place; there is no device reboot.
+If `gb_init` fails, the backlight pulses as a visible error signal.
 
 ## Memory
 
-- The ROM lives in flash and is read through the `gb_rom_read` callback. It is
-  not copied to RAM.
+- The active ROM lives in flash and is read through the `gb_rom_read` callback.
+  The built-in ROM is the embedded `GBC_ROM` array; pack games are read in place
+  from the memory-mapped ROM pack at `ROMPACK_OFFSET`. Neither is copied to RAM.
 - Cart RAM, the framebuffer, and the Peanut-GB state live in SRAM. Cart RAM is
-  persisted to a reserved flash region by `src/save.c`, and reloaded on boot.
-  Save-state snapshots store the whole `gb_s` plus cart RAM to numbered slots.
+  persisted to the active game's per-game battery block (above `GAMESAVE_BASE`)
+  by `src/save.c`, and reloaded on boot. Save-state snapshots store the whole
+  `gb_s` plus cart RAM to that game's numbered state slots.
 
 ## Why bare metal and not a MicroPython app
 
@@ -111,7 +199,10 @@ is that it replaces MonaOS while running; MonaOS is restored by reflashing.
 
 ## Extending
 
-See [ROADMAP.md](../ROADMAP.md). With battery saves and save states done, the
-next steps are display shaders, a multi-game ROM browser, and NES support. A
-launcher requires a decision on ROM storage: several ROMs embedded in flash, or a
-filesystem with USB mass-storage so ROMs can be dropped on without rebuilding.
+See [ROADMAP.md](../ROADMAP.md). Battery saves, save states, display shaders, the
+ROM browser, and per-game saves are done. ROM storage is settled: games live in a
+separately flashed ROM pack (`tools/pack_roms.py`, `src/rompack.c`,
+`src/flash_layout.h`) that the firmware reads in place, and saves are split into
+per-game areas (`src/save.c`). The remaining roadmap items are NES support (a
+second console core behind a console abstraction) and a dual-boot launcher that
+offers MonaOS or BadgeBoy at power-on.

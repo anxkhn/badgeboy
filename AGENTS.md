@@ -59,23 +59,52 @@ All of the pin assignments live in `src/config.h`.
    swaps each pixel when writing the framebuffer, so the blit path streams raw.
 7. No audio hardware. `ENABLE_SOUND` is 0. Do not add audio without first adding
    a speaker; there is none on the badge.
+8. Three-region flash layout. Flash is split into firmware (`0x000000`), ROM pack
+   (`0x400000`, `ROMPACK_OFFSET`), and per-game saves (`0xC80000`,
+   `GAMESAVE_BASE`), all in `src/flash_layout.h`. The firmware and the ROM pack
+   are separate flash images: a pack `.uf2` uses UF2 family id `0xe48bff57` (the
+   RP2 absolute family) so BOOTSEL writes it at the absolute pack address without
+   touching the firmware. Reflashing one leaves the other and the saves intact.
+9. Per-game saves. Each game gets its own 448 KiB save area (one 64 KiB battery
+   block plus three 128 KiB state slots), keyed by launcher index via
+   `save_set_game(index)` (`src/save.c`). The built-in ROM is index 0; pack games
+   follow, capped at 8 (`GAMESAVE_MAX`). A save is tagged with an FNV-1a `rom_id`
+   so it never loads for the wrong game.
+10. Backlight and brightness. The backlight is a single 16-bit hardware PWM on
+    GPIO 26, not zoned. `lcd_set_backlight` applies a gamma 2.8 curve that crushes
+    low inputs below the LED turn-on threshold, so the Brightness menu uses
+    `lcd_set_backlight_pct`, a linear duty, with a 20 percent floor. There is no
+    software framebuffer dimming.
+11. Use clean, canonical ROM dumps. A bad or hacked dump (for example a Pokemon
+    Red flagged `[S][BF]`) can break the game's own save validation even when
+    BadgeBoy persists SRAM correctly. The clean canonical dump saves and
+    continues fine.
+12. Diagnostics behind a flag. On-screen save diagnostics are gated by the
+    `BADGEBOY_DEBUG` CMake option (default OFF; `build.sh` forwards the env var).
+    The save store/load logic is host-verifiable: a RAM-mocked test round-trips a
+    store then load byte-perfect and rejects a wrong size or `rom_id`, so suspect
+    the ROM dump or auto-save timing before the storage logic.
 
 ## Source layout
 
 ```
 src/
   main.c              emulator glue: ROM access, CGB palette to RGB565,
-                      input mapping, frame loop
+                      input mapping, launcher, frame loop (run_game)
   config.h            verified pin map, display-mode selection, geometry
+  flash_layout.h      three-region flash map (firmware, ROM pack, per-game saves)
+  rompack.c/.h        ROM pack parsing, read in place from XIP flash
+  save.c/.h           per-game battery and save-state flash storage layer
   tufty_lcd.c/.h      8080 parallel ST7789 driver (PIO + DMA), scaling blit
   st7789_parallel.pio PIO program for the 8080 write strobe
 third_party/peanut-gb/
   peanut_gb.h         vendored emulator core (cgb branch), MIT
 tools/
   rom2c.py            ROM to C header converter (called by CMake)
+  pack_roms.py        builds a flashable ROM pack .uf2 from several ROMs
   dump_pinout.py      reads the real pin map from the badge over the REPL
 docs/                 hardware, building, flashing, configuration, architecture,
-                      compatibility
+                      saves, compatibility
 ```
 
 ## Build and flash

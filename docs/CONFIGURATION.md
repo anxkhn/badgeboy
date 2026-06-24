@@ -23,6 +23,12 @@ converter prints the parsed header so you can confirm the title, mode (DMG, GBC
 enhanced, or GBC only), and cartridge type. Supported sizes are anything that
 fits the badge flash, which comfortably covers GB and GBC titles.
 
+The built-in ROM becomes the first game in the on-device launcher (game index 0).
+Additional games come from a separately flashed ROM pack, so you do not have to
+rebuild the firmware to change your library. See the [ROM pack](#rom-pack)
+subsection below, [docs/FLASHING.md](FLASHING.md) for flashing a pack, and
+[docs/SAVES.md](SAVES.md) for how each game gets its own save area.
+
 To convert a ROM by hand, for inspection:
 
 ```bash
@@ -31,6 +37,49 @@ python3 tools/rom2c.py game.gbc /tmp/gb_rom.h
 
 The generated header and any built image contain copyrighted data. They are
 ignored by Git and must not be committed or distributed.
+
+## ROM pack
+
+The launcher's additional games come from a ROM pack: a separate flash image
+built on the host by `tools/pack_roms.py`. It is independent of the firmware, so
+updating your library does not touch the firmware or your saves.
+
+```bash
+python3 tools/pack_roms.py -o games.uf2 game1.gb "game 2.gbc" ...
+```
+
+The tool emits a flashable `games.uf2`, derives clean display titles from the
+file names (stripping bracketed and parenthesized dump tags), marks each game as
+CGB or DMG, and 4 KiB-aligns each ROM. The firmware reads the pack in place from
+memory-mapped flash. The total game count (built-in plus pack) is capped at 8 so
+each game keeps its own save area.
+
+Flash the pack by copying `games.uf2` to the `RP2350` BOOTSEL drive, exactly like
+the firmware; it writes only the pack region. See [docs/FLASHING.md](FLASHING.md)
+and [docs/SAVES.md](SAVES.md).
+
+> [!IMPORTANT]
+> Build packs only from software you legally own. Do not commit or distribute the
+> generated `.uf2`; it contains copyrighted data.
+
+## Debug build
+
+`BADGEBOY_DEBUG` is a CMake option (default OFF) that gates on-screen save
+diagnostics. Enable it with the environment variable, which `build.sh` forwards:
+
+```bash
+BADGEBOY_DEBUG=ON ./build.sh /absolute/path/to/game.gbc fullscreen
+```
+
+or directly with CMake:
+
+```bash
+cmake -B build -DBADGEBOY_DEBUG=ON ...
+```
+
+When on, it shows a SAVE verdict per game in the launcher, a live-versus-loaded
+checksum line in the in-game menu, and a load result overlay when a game starts.
+Normal builds show none of this.
 
 ## Display mode
 
@@ -67,7 +116,7 @@ Two rendering options have build-time defaults.
 
 | Option | Values | Default | Meaning |
 |--------|--------|---------|---------|
-| `DMG_PALETTE` | 0..3 | 0 | Palette for monochrome (DMG) games: 0 authentic green, 1 Game Boy Pocket grey, 2 high-contrast mono, 3 dusk amber. No effect on Game Boy Color titles. |
+| `DMG_PALETTE` | 0..3 | 2 | Palette for monochrome (DMG) games: 0 authentic green, 1 Game Boy Pocket grey, 2 high-contrast mono, 3 dusk amber. The default is 2 (high-contrast mono). No effect on Game Boy Color titles. |
 | `GBC_COLOR_CORRECTION` | 0 or 1 | 1 | Default state of CGB color correction. When on, colors match the real CGB LCD instead of the oversaturated raw values. Always toggleable live with HOME+B. |
 
 ```bash
@@ -100,9 +149,17 @@ and the effect is latched (it persists after release):
 | HOME + DOWN | restore the save-state snapshot (selected slot) |
 | HOME + C | open the in-game menu |
 
-The in-game menu pauses the game and gathers speed, color correction, DMG
-palette, save-state slot selection, save and load state, and reset. Inside it,
-UP and DOWN move, A activates or steps a value forward, C steps back, B closes.
+The in-game menu pauses the game. It collects, in order: speed, GBC color
+correction, DMG palette, Display (the shader pass: Off, Scanlines, Dot-matrix,
+Retro LCD, Vignette), Brightness (9 levels, 20 to 100 percent in 10 percent
+steps), save-state slot selection, save and load state, reset, and Exit to menu
+(which flushes the battery save and returns to the launcher). Inside it, UP and
+DOWN move, A activates or steps a value forward, C steps back, B closes.
+
+> [!NOTE]
+> Brightness is the hardware PWM backlight (a single 16-bit PWM channel on
+> GPIO 26), driven with a linear duty so every step is a real, visible level.
+> There is no software framebuffer dimming. See [docs/HARDWARE.md](HARDWARE.md).
 
 The in-game mapping is in `read_joypad()` and the HOME function handling is in the
 main loop, both in `src/main.c`. The button GPIOs are fixed by hardware and live

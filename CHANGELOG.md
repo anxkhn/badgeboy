@@ -3,6 +3,49 @@
 All notable changes to this project are documented here. The format is based on
 Keep a Changelog, and the project follows semantic versioning.
 
+## [0.7.0] - 2026-06-24
+
+Adds an on-device ROM browser with a separately flashed game library, per-game
+saves, and brightness control.
+
+### Added
+
+- On-device ROM browser. The game library is a separate flash image (the ROM
+  pack) built on the host by `tools/pack_roms.py` and read in place from XIP
+  flash. The firmware's built-in game is index 0; pack games are appended, capped
+  at 8 so each keeps its own save area. The launcher lists each game with a CGB or
+  DMG tag, and switching games is a soft reset with no reboot. See
+  `src/rompack.c` and `src/flash_layout.h`.
+- Per-game battery and save-state areas, selected by launcher index, so games
+  never overwrite one another's saves.
+- Brightness control in the in-game menu: 9 levels (20 to 100 percent in 10
+  percent steps) over a linear hardware PWM duty.
+- Exit to menu item in the in-game menu, which flushes the battery save and
+  returns to the launcher.
+
+### Changed
+
+- Saves moved from a single top-of-flash region to per-game areas above the ROM
+  pack (`0xC80000`), 448 KiB per game (one 64 KiB battery block plus three 128
+  KiB state slots).
+- Brightness uses a linear PWM duty instead of the gamma 2.8 curve, so low levels
+  are actually visible; the gamma curve crushed low inputs below the panel's
+  turn-on threshold.
+- On-screen save diagnostics are now behind the `BADGEBOY_DEBUG` build flag
+  (default OFF).
+- The launcher no longer shows per-game save badges.
+
+### Fixed
+
+- The automatic cartridge save could be blocked by an over-long throttle, so a
+  real in-game save never reached flash. The symptom was always NEW GAME and
+  never CONTINUE. The auto-save now commits shortly after writes settle, or after
+  the data has been dirty for a few seconds, rate limited and CRC-gated, and
+  force-flushes on Exit to menu.
+- A startup visual glitch from leftover or uninitialised framebuffer content at
+  game start. The framebuffer and panel are now cleared to black and a few frames
+  run without drawing so the game initialises VRAM before anything is shown.
+
 ## [0.6.0] - 2026-06-24
 
 Adds display shaders and corrects the automatic cartridge save.
@@ -142,6 +185,7 @@ playable on the badge.
 - Cartridge saves are volatile and lost on power off.
 - One embedded ROM per build; no on-device ROM browser yet.
 
+[0.7.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.7.0
 [0.6.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.6.0
 [0.5.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.4.0

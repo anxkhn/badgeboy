@@ -77,11 +77,16 @@ it carefully, since a bad write is how you brick the badge.
 
 ## Tier 4: requires storage plus a launcher and asset management
 
-- [ ] **Game menu and ROM browser.** Store several ROMs in the 16 MB flash (or
-  stream from PSRAM) and pick one from a list at boot. Needs a flash layout for
-  ROM blobs, `gb_get_rom_name` for titles, and a browser screen on the Tier 3 UI.
-  A later WiFi upload path (the CYW43439 radio is present) could add games without
-  re-flashing.
+- [x] **Game menu and ROM browser.** Done in v0.7.0. The game library lives in a
+  separately flashed ROM pack at a fixed flash offset (`0x400000`), built on the
+  host by `tools/pack_roms.py` and read in place from XIP flash by
+  `src/rompack.c`. The firmware's built-in ROM is game index 0; pack games are
+  appended, capped at 8 so each game keeps its own save area. On boot the
+  launcher lists each game with a CGB or DMG tag; switching is a soft reset via
+  `run_game()`, no reboot. Each game has its own battery and save-state area,
+  keyed by launcher index (`src/save.c`, `src/flash_layout.h`). Verified on
+  hardware. A later WiFi upload path (the CYW43439 radio is present) could add
+  games without re-flashing.
 - [ ] **NES support.** Add a second console core (for example InfoNES, or a
   compact 6502 plus PPU core) behind a console abstraction so the launcher can
   boot a GB or an NES title. PSRAM and CPU headroom make this viable; the real

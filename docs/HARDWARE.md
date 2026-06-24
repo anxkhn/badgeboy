@@ -112,8 +112,30 @@ These values are in `src/config.h`.
 | WR          | 30    | write strobe, PIO side-set           |
 | RD          | 31    | read strobe, held high               |
 | D0 .. D7    | 32-39 | 8-bit data bus, 8 consecutive GPIOs  |
-| BACKLIGHT   | 26    | PWM, gamma corrected in software     |
+| BACKLIGHT   | 26    | single 16-bit hardware PWM channel (not zoned) |
 | (reset)     | none  | no reset line; SWRESET used instead  |
+
+### Backlight and brightness
+
+The backlight is a single 16-bit hardware PWM channel on GPIO 26. It is one
+channel for the whole panel, not a multi-zone LED backlight. There is no
+software framebuffer dimming; brightness is purely the hardware PWM duty.
+
+Two driver entry points exist, with different curves:
+
+- `lcd_set_backlight(uint8_t)` applies a gamma 2.8 curve. This is good for
+  perceptual fades because it tracks how the eye reads brightness.
+- `lcd_set_backlight_pct(uint8_t percent)` is a linear PWM duty with no gamma.
+  The in-game menu Brightness control uses this so that every step is a real,
+  visible level. Its 9 levels are 20, 30, 40, 50, 60, 70, 80, 90, 100 percent.
+  20 percent is the floor because it reliably clears the panel's turn-on
+  threshold.
+
+> [!NOTE]
+> The gamma 2.8 curve crushes low inputs so hard that low percent values fall
+> below the backlight LEDs' turn-on threshold, so nothing is visibly lit until
+> roughly half scale. That is why the Brightness control uses the linear
+> `lcd_set_backlight_pct` path, and why its floor is 20 percent rather than 0.
 
 ### Power
 
