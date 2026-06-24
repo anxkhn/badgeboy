@@ -41,14 +41,14 @@ the Pico SDK flash API (`flash_range_program` and `flash_range_erase`, run from
 RAM with interrupts disabled). Used by everything below. Build it once and test
 it carefully, since a bad write is how you brick the badge.
 
-- [~] **Persistent cartridge saves.** Write cart SRAM to flash on HOME+UP and on
+- [x] **Persistent cartridge saves.** Write cart SRAM to flash on HOME+UP and on
   a dirty-RAM timer; load it at boot. `gb_get_save_size` gives the exact size to
   persist, and a CRC check skips redundant writes to limit flash wear. Saves are
   tagged with a per-ROM id so one game never loads another game's save. The save
   area is the top 64 KiB of flash, written with `flash_range_erase` and
   `flash_range_program` with interrupts disabled (safe because the firmware is
-  single core). Implemented in `src/save.c`; pending hardware verification across
-  a power cycle.
+  single core). Implemented in `src/save.c`. Verified on hardware across a full
+  power cycle.
 - [ ] **Save-state slots.** Serialize the full `struct gb_s` plus cart RAM to
   numbered flash slots. The save and restore mechanism is independent of the UI
   and can land first with a fixed slot, then gain slot selection from the menu.

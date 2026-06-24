@@ -6,10 +6,11 @@ A Game Boy and Game Boy Color emulator for the GitHub Universe 2025 badge
 firmware, drives the badge's 8-bit parallel ST7789 display through PIO and DMA,
 and reads the five front buttons for input.
 
-Version 0.2.0. Runs on hardware: a Game Boy Color title boots, renders full
-screen, and is playable, with color correction and fast-forward.
+Version 0.3.0. Runs on hardware: a Game Boy Color title boots, renders full
+screen, and is playable, with color correction, fast-forward, and battery saves
+that persist across power cycles.
 
-![status](https://img.shields.io/badge/status-v0.2.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
+![status](https://img.shields.io/badge/status-v0.3.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
 
 ## What it does
 
@@ -18,6 +19,7 @@ screen, and is playable, with color correction and fast-forward.
   modes: full screen, correct aspect ratio, or native centered.
 - Game Boy Color color correction that matches the real CGB LCD, toggleable live.
 - Latched fast-forward (2x and maximum) with an on-screen speed indicator.
+- Battery-backed cartridge saves persisted to flash, reloaded on boot.
 - Four selectable palettes for monochrome Game Boy games.
 - Embeds one ROM of your choice into flash at build time.
 - Maps the five front buttons to the eight Game Boy inputs using a shift modifier.
@@ -31,8 +33,8 @@ MonaOS can be restored at any time (see [docs/FLASHING.md](docs/FLASHING.md)).
 - No Game Boy Advance. GBA is well beyond the RP2350 and is out of scope.
 - No on-device ROM browser yet. One ROM is embedded per build. A multi-game
   launcher is on the roadmap.
-- Saves are currently held in RAM and are lost on power off. Battery-backed
-  persistence to flash is on the roadmap.
+- No save states yet (mid-game snapshots). Only battery saves are persisted so
+  far. Save-state slots are on the roadmap.
 
 ## Requirements
 

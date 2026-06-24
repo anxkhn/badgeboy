@@ -3,6 +3,23 @@
 All notable changes to this project are documented here. The format is based on
 Keep a Changelog, and the project follows semantic versioning.
 
+## [0.3.0] - 2026-06-24
+
+Adds persistent cartridge saves, verified on hardware across a full power cycle.
+
+### Added
+
+- Battery-backed cartridge saves. Cart RAM is written to a reserved 64 KiB region
+  at the top of flash and reloaded on boot, so progress survives power off.
+- Automatic saving a moment after in-game writes settle, plus an explicit
+  HOME+UP save, with an on-screen marker during the flash write.
+- Per-ROM save tagging (FNV-1a hash of the ROM header) so a save never loads for
+  the wrong game, and a CRC32 check that skips redundant writes to limit flash
+  wear.
+- New `src/save.c` flash storage layer using `flash_range_erase` and
+  `flash_range_program` with interrupts disabled, safe for the single-core
+  firmware.
+
 ## [0.2.0] - 2026-06-24
 
 Adds the first round of playability features, all verified on hardware.
@@ -59,5 +76,6 @@ playable on the badge.
 - Cartridge saves are volatile and lost on power off.
 - One embedded ROM per build; no on-device ROM browser yet.
 
+[0.3.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.3.0
 [0.2.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.2.0
 [0.1.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.1.0
