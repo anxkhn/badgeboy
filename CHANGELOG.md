@@ -3,6 +3,31 @@
 All notable changes to this project are documented here. The format is based on
 Keep a Changelog, and the project follows semantic versioning.
 
+## [0.5.0] - 2026-06-24
+
+Adds an in-game mod menu and a round of UI and tooling work.
+
+### Added
+
+- In-game mod menu (HOME+C): a modal menu rendered at the panel's native 320x240,
+  in a Material-style dark theme with the Tamzen 7x14 font. Collects speed, color
+  correction, DMG palette, save-state slot selection, save and load state, and
+  reset, with right-aligned values and a rounded selection highlight.
+- Save-state slot selection (multiple slots) through the menu.
+- Subtle text toasts for the quick save-state and battery-save actions.
+- `lcd_blit_full` for native-resolution drawing, plus a clang-format config and
+  `tools/format.sh`.
+
+### Changed
+
+- The DMG palette is now a runtime setting and is hidden on Game Boy Color games.
+- HOME is a function modifier: HOME+A speed, HOME+B color correction, HOME+UP and
+  HOME+DOWN save and load state, HOME+C opens the menu. The battery save remains
+  automatic.
+- Removed the on-screen dot indicators in favour of the menu and text toasts.
+- Documentation: GitHub alert blocks and mermaid diagrams; Conventional Commits
+  and the formatter step documented in CONTRIBUTING.
+
 ## [0.4.0] - 2026-06-24
 
 Adds save-state snapshots, verified on hardware including across a power cycle.
@@ -96,6 +121,7 @@ playable on the badge.
 - Cartridge saves are volatile and lost on power off.
 - One embedded ROM per build; no on-device ROM browser yet.
 
+[0.5.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.5.0
 [0.4.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.4.0
 [0.3.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.3.0
 [0.2.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.2.0

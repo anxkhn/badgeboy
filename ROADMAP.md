@@ -62,11 +62,12 @@ it carefully, since a bad write is how you brick the badge.
 
 ## Tier 3: requires an on-screen UI overlay
 
-- [~] **In-game menu.** A pause overlay drawn over a dimmed frame: Resume, Speed,
-  Color correction, Palette, save-state Slot, Save state, Load state, Reset.
-  Opened with HOME+C; the game pauses while it is open. Uses a vendored 8x8
-  bitmap font (`third_party/font8x8`). This is the UI host that unlocks save-state
-  slot selection. Implemented in `src/main.c`; pending hardware verification.
+- [x] **In-game menu.** A modal mod menu opened with HOME+C, rendered at the
+  panel's native 320x240 (not upscaled from the Game Boy framebuffer) in a
+  Material-style dark theme with the Tamzen 7x14 font. Collects speed, color
+  correction, DMG palette, save-state slot selection, save and load state, and
+  reset, with right-aligned values and a rounded selection highlight. This is the
+  UI host that unlocks save-state slot selection. Verified on hardware.
 - [ ] **Display shaders.** Per-pixel effects in the scaling blit: scanlines and a
   dot-matrix or LCD grid overlay, alongside the GBC correction from Tier 1. There
   is no GPU, so these are CPU-side passes; PSRAM holds the effect buffers. Costs
