@@ -6,11 +6,11 @@ A Game Boy and Game Boy Color emulator for the GitHub Universe 2025 badge
 firmware, drives the badge's 8-bit parallel ST7789 display through PIO and DMA,
 and reads the five front buttons for input.
 
-Version 0.3.0. Runs on hardware: a Game Boy Color title boots, renders full
-screen, and is playable, with color correction, fast-forward, and battery saves
-that persist across power cycles.
+Version 0.4.0. Runs on hardware: a Game Boy Color title boots, renders full
+screen, and is playable, with color correction, fast-forward, battery saves, and
+save-state snapshots.
 
-![status](https://img.shields.io/badge/status-v0.3.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
+![status](https://img.shields.io/badge/status-v0.4.0-blue) ![platform](https://img.shields.io/badge/platform-RP2350B-informational) ![license](https://img.shields.io/badge/license-GPLv3-green)
 
 ## What it does
 

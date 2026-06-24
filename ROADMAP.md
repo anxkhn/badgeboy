@@ -36,6 +36,8 @@ Done in v0.2.0.
 
 ## Tier 2: requires a flash storage layer (shared prerequisite)
 
+Done in v0.3.0 (battery saves) and v0.4.0 (save states).
+
 The single biggest unlock. A small flash region below the firmware, written with
 the Pico SDK flash API (`flash_range_program` and `flash_range_erase`, run from
 RAM with interrupts disabled). Used by everything below. Build it once and test
@@ -49,13 +51,14 @@ it carefully, since a bad write is how you brick the badge.
   `flash_range_program` with interrupts disabled (safe because the firmware is
   single core). Implemented in `src/save.c`. Verified on hardware across a full
   power cycle.
-- [~] **Save-state slots.** A full snapshot of the machine (the whole `gb_s`
+- [x] **Save-state slots.** A full snapshot of the machine (the whole `gb_s`
   struct plus cart RAM) written to a numbered flash slot, independent of the
   battery save. Implemented in `src/save.c` as `state_store` and `state_load`,
   tagged with the firmware build and ROM id so a snapshot only restores into a
   compatible binary and game; the callbacks and priv pointer are re-linked after
-  a load. One slot is wired now (HOME+UP snapshot, HOME+DOWN restore); slot
-  selection arrives with the in-game menu. Pending hardware verification.
+  a load. One slot is wired (HOME+UP snapshot, HOME+DOWN restore); slot selection
+  arrives with the in-game menu. Verified on hardware, including across a power
+  cycle.
 
 ## Tier 3: requires an on-screen UI overlay
 

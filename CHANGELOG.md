@@ -3,6 +3,26 @@
 All notable changes to this project are documented here. The format is based on
 Keep a Changelog, and the project follows semantic versioning.
 
+## [0.4.0] - 2026-06-24
+
+Adds save-state snapshots, verified on hardware including across a power cycle.
+
+### Added
+
+- Save-state snapshots: a full capture of the machine (the whole `gb_s` plus cart
+  RAM) to a flash slot, taken with HOME+UP and restored with HOME+DOWN,
+  independent of the cartridge battery save.
+- Snapshots are tagged with the firmware build and ROM id, so one only restores
+  into a compatible binary and game; the emulator callbacks and priv pointer are
+  re-linked after a restore. On-screen markers show snapshot (magenta) and
+  restore result (green found, red not found).
+
+### Changed
+
+- HOME function controls reworked: the cartridge battery save is now fully
+  automatic (no button), and HOME+UP / HOME+DOWN drive save states.
+- Documented the two save kinds clearly in the README and `docs/CONFIGURATION.md`.
+
 ## [0.3.0] - 2026-06-24
 
 Adds persistent cartridge saves, verified on hardware across a full power cycle.
@@ -76,6 +96,7 @@ playable on the badge.
 - Cartridge saves are volatile and lost on power off.
 - One embedded ROM per build; no on-device ROM browser yet.
 
+[0.4.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.4.0
 [0.3.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.3.0
 [0.2.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.2.0
 [0.1.0]: https://github.com/anxkhn/badgeboy/releases/tag/v0.1.0
