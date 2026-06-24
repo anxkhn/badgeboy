@@ -11,7 +11,7 @@
 #include "config.h"
 #include "tufty_lcd.h"
 #include "save.h"
-#include "font8x8_basic.h"
+#include "arcade8x8.h"
 
 // Peanut-GB build options. These must be set before including the core.
 #define ENABLE_LCD 1
@@ -198,20 +198,22 @@ static void draw_indicator(uint16_t *fb, int speed, bool cc) {
     put_block(fb, 4, 14, 6, 6, cc ? 0x07FF : 0x8410);
 }
 
-// Draw one 8x8 glyph into the byte-swapped framebuffer. The font stores the
-// least significant bit as the leftmost pixel.
+// Draw one 8x8 glyph into the byte-swapped framebuffer. The arcade font is
+// indexed from 0x20 (space) and stores the most significant bit as the leftmost
+// pixel.
 static void draw_char(uint16_t *fb, int x0, int y0, char ch, uint16_t col) {
-    if ((unsigned char)ch > 0x7F)
-        ch = '?';
+    unsigned char uc = (unsigned char)ch;
+    if (uc < 0x20 || uc > 0x7F)
+        uc = '?';
     uint16_t sw = (uint16_t)((col >> 8) | (col << 8));
-    const char *g = font8x8_basic[(unsigned char)ch];
+    const unsigned char *g = font_arcade8x8[uc - 0x20];
     for (int r = 0; r < 8; r++) {
         int y = y0 + r;
         if (y < 0 || y >= GB_H)
             continue;
-        unsigned char bits = (unsigned char)g[r];
+        unsigned char bits = g[r];
         for (int c = 0; c < 8; c++) {
-            if (!((bits >> c) & 1))
+            if (!((bits >> (7 - c)) & 1))
                 continue;
             int x = x0 + c;
             if (x < 0 || x >= GB_W)
@@ -221,9 +223,12 @@ static void draw_char(uint16_t *fb, int x0, int y0, char ch, uint16_t col) {
     }
 }
 
+// Draw text with a one-pixel drop shadow so it stays readable over game pixels.
 static void draw_text(uint16_t *fb, int x0, int y0, const char *s, uint16_t col) {
-    for (int x = x0; *s; s++, x += 8)
+    for (int x = x0; *s; s++, x += 8) {
+        draw_char(fb, x + 1, y0 + 1, *s, 0x0000); // shadow
         draw_char(fb, x, y0, *s, col);
+    }
 }
 
 // Halve every channel of every pixel to dim the frame behind the menu. Works on
@@ -368,6 +373,23 @@ static bool menu_activate(int dir) {
     return false;
 }
 
+// The DMG palette only affects monochrome games, so hide it on Color games.
+static bool menu_item_visible(int item) {
+    if (item == MI_PALETTE)
+        return !gb.cgb.cgbMode;
+    return true;
+}
+
+// Move the selection to the next visible item in the given direction.
+static int menu_move(int sel, int dir) {
+    for (int k = 0; k < MI_COUNT; k++) {
+        sel = (sel + MI_COUNT + dir) % MI_COUNT;
+        if (menu_item_visible(sel))
+            break;
+    }
+    return sel;
+}
+
 // One iteration of the menu: handle input, render, blit. Closes on B or Resume.
 static void menu_step(void) {
     static bool pu, pd, pa, pb, pc;
@@ -387,9 +409,9 @@ static void menu_step(void) {
     }
 
     if (u && !pu)
-        g_menu_sel = (g_menu_sel + MI_COUNT - 1) % MI_COUNT;
+        g_menu_sel = menu_move(g_menu_sel, -1);
     if (d && !pd)
-        g_menu_sel = (g_menu_sel + 1) % MI_COUNT;
+        g_menu_sel = menu_move(g_menu_sel, +1);
     if (a && !pa) {
         if (menu_activate(+1)) {
             g_menu_open = false;
@@ -413,10 +435,15 @@ static void menu_step(void) {
     put_block(priv.fb, px, py, pw, ph, 0x0010);         // panel
     put_block(priv.fb, px, py, pw, 1, 0x5AEB);          // top border
     put_block(priv.fb, px, py + ph - 1, pw, 1, 0x5AEB); // bottom border
-    draw_text(priv.fb, px + 6, py + 4, "BadgeBoy menu", 0xFFE0);
+    draw_text(priv.fb, px + 6, py + 4, "Mod Menu", 0xFFE0);
+    draw_text(priv.fb, px + pw - 6 - 6 * 8, py + 4, "v" BADGEBOY_VERSION, 0x07FF);
 
+    int row = 0;
     for (int i = 0; i < MI_COUNT; i++) {
-        int y = py + 18 + i * 12;
+        if (!menu_item_visible(i))
+            continue;
+        int y = py + 18 + row * 12;
+        row++;
         char line[22];
         menu_label(i, line, sizeof(line));
         if (i == g_menu_sel) {
