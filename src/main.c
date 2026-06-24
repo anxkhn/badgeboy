@@ -11,7 +11,7 @@
 #include "config.h"
 #include "tufty_lcd.h"
 #include "save.h"
-#include "arcade8x8.h"
+#include "tamzen5x9.h"
 
 // Peanut-GB build options. These must be set before including the core.
 #define ENABLE_LCD 1
@@ -188,31 +188,27 @@ static void put_block(uint16_t *fb, int x0, int y0, int w, int h, uint16_t col) 
             fb[y * GB_W + x] = sw;
 }
 
-// On-screen status overlay drawn into the top-left of the frame: one to three
-// bars for the speed level (green, yellow, red), and a marker for the color
-// correction state (cyan on, grey off).
-static void draw_indicator(uint16_t *fb, int speed, bool cc) {
-    const uint16_t speed_col[3] = {0x07E0, 0xFFE0, 0xF800};
-    for (int i = 0; i <= speed; i++)
-        put_block(fb, 4 + i * 8, 4, 6, 6, speed_col[speed]);
-    put_block(fb, 4, 14, 6, 6, cc ? 0x07FF : 0x8410);
-}
+// Tamzen 5x9 menu font. FONT_ADV and FONT_LH are the horizontal and vertical
+// advances (glyph size plus one pixel of spacing).
+#define FONT_W 5
+#define FONT_H 9
+#define FONT_ADV 6
+#define FONT_LH 10
 
-// Draw one 8x8 glyph into the byte-swapped framebuffer. The arcade font is
-// indexed from 0x20 (space) and stores the most significant bit as the leftmost
-// pixel.
+// Draw one glyph into the byte-swapped framebuffer. The font is indexed from
+// 0x20 (space) and stores the most significant bit as the leftmost column.
 static void draw_char(uint16_t *fb, int x0, int y0, char ch, uint16_t col) {
     unsigned char uc = (unsigned char)ch;
     if (uc < 0x20 || uc > 0x7F)
         uc = '?';
     uint16_t sw = (uint16_t)((col >> 8) | (col << 8));
-    const unsigned char *g = font_arcade8x8[uc - 0x20];
-    for (int r = 0; r < 8; r++) {
+    const unsigned char *g = font_tamzen5x9[uc - 0x20];
+    for (int r = 0; r < FONT_H; r++) {
         int y = y0 + r;
         if (y < 0 || y >= GB_H)
             continue;
         unsigned char bits = g[r];
-        for (int c = 0; c < 8; c++) {
+        for (int c = 0; c < FONT_W; c++) {
             if (!((bits >> (7 - c)) & 1))
                 continue;
             int x = x0 + c;
@@ -225,7 +221,7 @@ static void draw_char(uint16_t *fb, int x0, int y0, char ch, uint16_t col) {
 
 // Draw text with a one-pixel drop shadow so it stays readable over game pixels.
 static void draw_text(uint16_t *fb, int x0, int y0, const char *s, uint16_t col) {
-    for (int x = x0; *s; s++, x += 8) {
+    for (int x = x0; *s; s++, x += FONT_ADV) {
         draw_char(fb, x + 1, y0 + 1, *s, 0x0000); // shadow
         draw_char(fb, x, y0, *s, col);
     }
@@ -431,30 +427,32 @@ static void menu_step(void) {
     pc = c;
 
     // Opaque panel over the dimmed frame.
-    const int px = 8, py = 6, pw = GB_W - 16, ph = GB_H - 12;
+    const int px = 8, py = 8, pw = GB_W - 16, ph = GB_H - 16;
     put_block(priv.fb, px, py, pw, ph, 0x0010);         // panel
     put_block(priv.fb, px, py, pw, 1, 0x5AEB);          // top border
     put_block(priv.fb, px, py + ph - 1, pw, 1, 0x5AEB); // bottom border
-    draw_text(priv.fb, px + 6, py + 4, "Mod Menu", 0xFFE0);
-    draw_text(priv.fb, px + pw - 6 - 6 * 8, py + 4, "v" BADGEBOY_VERSION, 0x07FF);
+    draw_text(priv.fb, px + 5, py + 4, "Mod Menu", 0xFFE0);
+    draw_text(priv.fb, px + pw - 5 - 6 * FONT_ADV, py + 4, "v" BADGEBOY_VERSION,
+              0x07FF);
+    put_block(priv.fb, px + 3, py + 15, pw - 6, 1, 0x5AEB); // divider
 
     int row = 0;
     for (int i = 0; i < MI_COUNT; i++) {
         if (!menu_item_visible(i))
             continue;
-        int y = py + 18 + row * 12;
+        int y = py + 20 + row * FONT_LH;
         row++;
         char line[22];
         menu_label(i, line, sizeof(line));
         if (i == g_menu_sel) {
-            put_block(priv.fb, px + 2, y - 1, pw - 4, 10, 0x315A);
-            draw_text(priv.fb, px + 6, y, line, 0xFFFF);
+            put_block(priv.fb, px + 2, y - 1, pw - 4, FONT_LH, 0x315A);
+            draw_text(priv.fb, px + 5, y, line, 0xFFFF);
         } else {
-            draw_text(priv.fb, px + 6, y, line, 0xC618);
+            draw_text(priv.fb, px + 5, y, line, 0xC618);
         }
     }
     if (g_status[0])
-        draw_text(priv.fb, px + 6, py + ph - 11, g_status, 0x07FF);
+        draw_text(priv.fb, px + 5, py + ph - 12, g_status, 0x07FF);
 
     if (g_menu_open == false)
         primed = false; // reset for next open
@@ -510,9 +508,6 @@ int main(void) {
     bool prev_a = false, prev_b = false, prev_up = false, prev_dn = false,
          prev_c = false;
     bool do_snapshot = false, do_restore = false;
-    uint32_t indicator_until = 0;
-    uint32_t note_until = 0; // transient marker for state save/restore
-    uint16_t note_col = 0;
 
     while (1) {
         uint32_t t0 = time_us_32();
@@ -527,21 +522,16 @@ int main(void) {
         if (down(BTN_HOME)) {
             bool a = down(BTN_A), b = down(BTN_B);
             bool up = down(BTN_UP), dn = down(BTN_DOWN), c = down(BTN_C);
-            if (a && !prev_a) {
+            if (a && !prev_a)
                 g_speed = (g_speed + 1) % 3;
-                indicator_until = t0 + 1500000;
-            }
-            if (b && !prev_b) {
+            if (b && !prev_b)
                 color_correct = !color_correct;
-                indicator_until = t0 + 1500000;
-            }
             if (up && !prev_up)
                 do_snapshot = true;
             if (dn && !prev_dn)
                 do_restore = true;
-            if (c && !prev_c) {
+            if (c && !prev_c)
                 menu_open();
-            }
             prev_a = a;
             prev_b = b;
             prev_up = up;
@@ -567,34 +557,21 @@ int main(void) {
         // Restore a snapshot: overwrite the machine state and cart RAM, then
         // re-link the callbacks and priv pointer to this build's code and data.
         if (do_restore) {
-            bool ok = state_load(g_slot, &gb, sizeof(gb), priv.cart_ram,
-                                 sizeof(priv.cart_ram), rid);
-            if (ok) {
+            if (state_load(g_slot, &gb, sizeof(gb), priv.cart_ram,
+                           sizeof(priv.cart_ram), rid)) {
                 relink_gb();
                 ram_dirty = true; // let the restored cart RAM reach flash
                 ram_write_us = time_us_32();
             }
-            note_until = time_us_32() + 800000;
-            note_col = ok ? 0x07E0 : 0xF800; // green ok, red failed
             do_restore = false;
         }
 
-        if (g_speed != 0 || t0 < indicator_until)
-            draw_indicator(priv.fb, g_speed, color_correct);
-        if (time_us_32() < note_until)
-            put_block(priv.fb, GB_W - 10, 4, 6, 6, note_col);
-
         lcd_blit_gb(priv.fb);
 
-        // Take a snapshot: freeze briefly while the slot is erased and written.
-        // Show a marker first so the pause is explained.
+        // Take a snapshot: this briefly freezes while the slot is written.
         if (do_snapshot) {
-            put_block(priv.fb, GB_W - 10, 4, 6, 6, 0xF81F); // magenta
-            lcd_blit_gb(priv.fb);
-            bool ok = state_store(g_slot, &gb, sizeof(gb), priv.cart_ram,
-                                  sizeof(priv.cart_ram), rid);
-            note_until = time_us_32() + 800000;
-            note_col = ok ? 0xF81F : 0xF800;
+            state_store(g_slot, &gb, sizeof(gb), priv.cart_ram, sizeof(priv.cart_ram),
+                        rid);
             do_snapshot = false;
         }
 
@@ -606,8 +583,6 @@ int main(void) {
             uint32_t crc = save_crc32(priv.cart_ram, save_size);
             ram_dirty = false;
             if (crc != saved_crc) {
-                put_block(priv.fb, GB_W - 10, 14, 6, 6, 0xFFFF);
-                lcd_blit_gb(priv.fb);
                 save_store(priv.cart_ram, save_size, rid);
                 saved_crc = crc;
             }
