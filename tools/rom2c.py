@@ -17,6 +17,7 @@
 # ROMs you legally own.
 
 import os
+import re
 import sys
 
 CART_TYPES = {
@@ -26,6 +27,18 @@ CART_TYPES = {
     0x19: "MBC5", 0x1A: "MBC5+RAM", 0x1B: "MBC5+RAM+BATTERY",
     0x1C: "MBC5+RUMBLE", 0x1D: "MBC5+RUMBLE+RAM", 0x1E: "MBC5+RUMBLE+RAM+BATTERY",
 }
+
+
+def display_title(path: str, data: bytes) -> str:
+    """A clean menu name from the file name, falling back to the cart header."""
+    name = os.path.splitext(os.path.basename(path))[0]
+    name = re.sub(r"[\(\[].*?[\)\]]", "", name)
+    name = name.replace("_", " ").replace(" - ", " ")
+    name = re.sub(r"\s+", " ", name).strip(" -")
+    if not name:
+        raw = data[0x134 : (0x13F if (data[0x143] & 0x80) else 0x143)]
+        name = "".join(chr(b) for b in raw if 0x20 <= b < 0x7F).strip()
+    return (name or "Game")[:31]
 
 
 def main() -> int:
@@ -45,6 +58,7 @@ def main() -> int:
     cgb_flag = data[0x143]
     cart_type = data[0x147]
     cgb = "GBC only" if cgb_flag == 0xC0 else ("GBC enhanced" if cgb_flag == 0x80 else "DMG")
+    menu_title = display_title(src, data).replace('"', "'")
 
     out_dir = os.path.dirname(out)
     if out_dir:
@@ -57,6 +71,7 @@ def main() -> int:
                 f"Size: {len(data)} bytes\n")
         o.write("#ifndef GB_ROM_H\n#define GB_ROM_H\n")
         o.write(f"#define GB_ROM_SIZE {len(data)}u\n")
+        o.write(f'#define GB_ROM_TITLE "{menu_title}"\n')
         o.write('__attribute__((section(".rodata"))) const unsigned char gb_rom[] = {\n')
         for i in range(0, len(data), 16):
             o.write("  " + ",".join(str(b) for b in data[i:i + 16]) + ",\n")

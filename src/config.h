@@ -10,7 +10,7 @@
 #define CONFIG_H
 
 // Firmware version, shown in the mod menu. Keep in step with the release tag.
-#define BADGEBOY_VERSION "0.6.0"
+#define BADGEBOY_VERSION "0.7.0"
 
 // Display: 8-bit parallel (8080) ST7789. The data bus is on GPIO 32-39, which
 // only exist on the RP2350B package, so the build targets an RP2350B board and

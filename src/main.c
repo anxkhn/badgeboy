@@ -11,6 +11,8 @@
 #include "config.h"
 #include "tufty_lcd.h"
 #include "save.h"
+#include "rompack.h"
+#include "flash_layout.h"
 #include "tamzen7x14.h"
 
 // Peanut-GB build options. These must be set before including the core.
@@ -48,9 +50,14 @@ static uint16_t menu_fb[LCD_W * LCD_H];
 static volatile bool ram_dirty = false;
 static volatile uint32_t ram_write_us = 0;
 
+// The ROM currently being emulated. The launcher points this at the built-in ROM
+// or at a game in the flash pack before starting a session; the read callbacks
+// dereference it in place (flash is memory mapped, so there is no copy).
+static const uint8_t *g_rom_base = gb_rom;
+
 static uint8_t rom_read(struct gb_s *gb, const uint_fast32_t addr) {
     (void)gb;
-    return gb_rom[addr];
+    return g_rom_base[addr];
 }
 
 static uint8_t ram_read(struct gb_s *gb, const uint_fast32_t addr) {
@@ -69,13 +76,19 @@ static void ram_write(struct gb_s *gb, const uint_fast32_t addr, const uint8_t v
 
 // A stable id for the loaded ROM, hashed from its header (title and checksums).
 // Used to tag saves so one game never loads another game's save.
-static uint32_t rom_id(void) {
+// A stable id for a ROM, hashed from its header (title and checksums). Used to
+// tag saves so one game never loads another game's save.
+static uint32_t rom_id_of(const uint8_t *rom) {
     uint32_t h = 2166136261u; // FNV-1a
     for (int i = 0x134; i <= 0x14F; i++) {
-        h ^= gb_rom[i];
+        h ^= rom[i];
         h *= 16777619u;
     }
     return h;
+}
+
+static uint32_t rom_id(void) {
+    return rom_id_of(g_rom_base);
 }
 
 static void gb_err(struct gb_s *gb, const enum gb_error_e e, const uint16_t a) {
@@ -88,7 +101,22 @@ static void gb_err(struct gb_s *gb, const enum gb_error_e e, const uint16_t a) {
 static int g_speed = 0;       // 0 normal, 1 two times, 2 maximum
 static int g_slot = 0;        // selected save-state slot
 static int g_shader = 0;      // 0 off, 1 scanlines, 2 dot-matrix
+static int g_brightness = 8;  // index into bl_levels (0 dimmest, 8 brightest)
 static uint32_t g_rom_id = 0; // set in main, used by save and load
+
+// Backlight levels as linear PWM duty: an even 20 to 100 percent in 10 percent
+// steps. The backlight is a single hardware PWM channel, driven without gamma so
+// every step is a real, visible level (20 percent clears the panel's threshold).
+static const uint8_t bl_levels[9] = {20, 30, 40, 50, 60, 70, 80, 90, 100};
+#define BL_LEVELS 9
+
+#ifdef BADGEBOY_DEBUG
+// Save diagnostics, surfaced on screen to confirm the battery save round-trips.
+static uint32_t g_loaded_crc = 0;
+static uint32_t g_cur_save_size = 0;
+static char g_dbg[24] = "";
+static uint32_t g_dbg_until = 0;
+#endif
 
 // A short on-screen message shown for a moment after an action (save, load).
 static char g_toast[16] = "";
@@ -236,12 +264,26 @@ static void draw_text(uint16_t *fb, int x0, int y0, const char *s, uint16_t col)
     }
 }
 
-// A small filled dot in the top-right corner: the quiet auto-save indicator.
+// A small, semi-transparent dot in the top-left: the quiet auto-save indicator.
+// Blended rather than solid so it reads as a hint, not a glitch, and kept clear
+// of the right side where many games draw their own menus.
 static void draw_dot(uint16_t *fb, uint16_t col) {
-    uint16_t sw = (uint16_t)((col >> 8) | (col << 8));
-    for (int y = 3; y < 7; y++)
-        for (int x = GB_W - 7; x < GB_W - 3; x++)
-            fb[y * GB_W + x] = sw;
+    int cr = (col >> 11) & 0x1F, cg = (col >> 5) & 0x3F, cb = col & 0x1F;
+    const int a = 11; // blend weight out of 16
+    for (int y = 3; y < 7; y++) {
+        for (int x = 3; x < 7; x++) {
+            if ((x == 3 || x == 6) && (y == 3 || y == 6))
+                continue; // trim corners for a round look
+            uint16_t be = fb[y * GB_W + x];
+            uint16_t c = (uint16_t)((be >> 8) | (be << 8));
+            int r = (c >> 11) & 0x1F, g = (c >> 5) & 0x3F, b = c & 0x1F;
+            r = (r * (16 - a) + cr * a) >> 4;
+            g = (g * (16 - a) + cg * a) >> 4;
+            b = (b * (16 - a) + cb * a) >> 4;
+            uint16_t o = (uint16_t)((r << 11) | (g << 5) | b);
+            fb[y * GB_W + x] = (uint16_t)((o >> 8) | (o << 8));
+        }
+    }
 }
 
 // Native-resolution drawing into menu_fb (320x240, byte-swapped RGB565).
@@ -351,16 +393,19 @@ enum {
     MI_COLOR,
     MI_PALETTE,
     MI_DISPLAY,
+    MI_BRIGHT,
     MI_SLOT,
     MI_SAVE,
     MI_LOAD,
     MI_RESET,
+    MI_EXIT,
     MI_COUNT
 };
 
 static bool g_menu_open = false;
 static int g_menu_sel = 0;
 static char g_status[22] = "";
+static bool g_exit_to_menu = false; // set by MI_EXIT, ends the game session
 
 static void menu_open(void) {
     g_menu_open = true;
@@ -380,6 +425,8 @@ static const char *menu_name(int item) {
         return "Palette";
     case MI_DISPLAY:
         return "Display";
+    case MI_BRIGHT:
+        return "Brightness";
     case MI_SLOT:
         return "Save slot";
     case MI_SAVE:
@@ -388,6 +435,8 @@ static const char *menu_name(int item) {
         return "Load state";
     case MI_RESET:
         return "Reset game";
+    case MI_EXIT:
+        return "Exit to menu";
     }
     return "";
 }
@@ -411,6 +460,9 @@ static void menu_value(int item, char *out, int n) {
         snprintf(out, n, "%s", shader_s[g_shader]);
         break;
     }
+    case MI_BRIGHT:
+        snprintf(out, n, "%u%%", (unsigned)bl_levels[g_brightness]);
+        break;
     case MI_SLOT:
         snprintf(out, n, "%d", g_slot);
         break;
@@ -438,6 +490,10 @@ static bool menu_activate(int dir) {
         g_shader = (g_shader + 5 + dir) % 5;
         lcd_set_shader(g_shader);
         break;
+    case MI_BRIGHT:
+        g_brightness = (g_brightness + BL_LEVELS + dir) % BL_LEVELS;
+        lcd_set_backlight_pct(bl_levels[g_brightness]);
+        break;
     case MI_SLOT:
         g_slot = (g_slot + STATE_SLOTS + dir) % STATE_SLOTS;
         break;
@@ -463,6 +519,12 @@ static bool menu_activate(int dir) {
     case MI_RESET:
         if (dir > 0) {
             gb_reset(&gb);
+            return true;
+        }
+        break;
+    case MI_EXIT:
+        if (dir > 0) {
+            g_exit_to_menu = true;
             return true;
         }
         break;
@@ -540,17 +602,17 @@ static void menu_step(void) {
     m_fill(0, 0, LCD_W, LCD_H, C_BG);
 
     // Header: title, accent underline, version.
-    m_text(16, 10, "Mod Menu", C_TEXT, 2);
-    m_round(16, 42, 64, 4, C_ACCENT, 2);
+    m_text(16, 6, "Mod Menu", C_TEXT, 2);
+    m_round(16, 34, 64, 4, C_ACCENT, 2);
     {
         const char *ver = "v" BADGEBOY_VERSION;
-        m_text(LCD_W - 16 - m_text_w(ver, 1), 16, ver, C_DIM, 1);
+        m_text(LCD_W - 16 - m_text_w(ver, 1), 10, ver, C_DIM, 1);
     }
-    m_fill(0, 52, LCD_W, 1, C_CARD);
+    m_fill(0, 42, LCD_W, 1, C_CARD);
 
-    // Item list. Sized so the longest case (nine items on a DMG game) fits
+    // Item list. Sized so the longest case (eleven items on a DMG game) fits
     // between the header and footer without crowding the Color case.
-    const int top = 54, rh = 18;
+    const int top = 44, rh = 15;
     int row = 0;
     for (int i = 0; i < MI_COUNT; i++) {
         if (!menu_item_visible(i))
@@ -561,20 +623,29 @@ static void menu_step(void) {
         uint16_t name_c = sel ? C_TEXT : C_DIM;
         uint16_t val_c = sel ? C_ACCENT : C_FAINT;
         if (sel) {
-            m_round(12, y, LCD_W - 24, rh - 2, C_CARD, 6);
-            m_round(16, y + 4, 4, rh - 10, C_ACCENT, 2);
+            m_round(12, y, LCD_W - 24, rh - 1, C_CARD, 5);
+            m_round(16, y + 3, 4, rh - 8, C_ACCENT, 2);
         }
-        m_text(28, y + 2, menu_name(i), name_c, 1);
+        m_text(28, y + 1, menu_name(i), name_c, 1);
         char val[16];
         menu_value(i, val, sizeof(val));
         if (val[0])
-            m_text(LCD_W - 24 - m_text_w(val, 1), y + 2, val, val_c, 1);
+            m_text(LCD_W - 24 - m_text_w(val, 1), y + 1, val, val_c, 1);
     }
-
-    // Footer: a status line after an action, otherwise control hints.
-    m_fill(16, LCD_H - 22, LCD_W - 32, 1, C_CARD);
+    // Footer: the live save checksum (diagnostic), then a status or control line.
+#ifdef BADGEBOY_DEBUG
+    {
+        uint32_t live =
+            g_cur_save_size ? save_crc32(priv.cart_ram, g_cur_save_size) : 0;
+        char d[32];
+        snprintf(d, sizeof(d), "live c=%08x  load c=%08x", (unsigned)live,
+                 (unsigned)g_loaded_crc);
+        m_text((LCD_W - m_text_w(d, 1)) / 2, LCD_H - 30, d, C_FAINT, 1);
+    }
+#endif
+    m_fill(16, LCD_H - 20, LCD_W - 32, 1, C_CARD);
     if (g_status[0]) {
-        m_text((LCD_W - m_text_w(g_status, 1)) / 2, LCD_H - 16, g_status, C_TEAL, 1);
+        m_text((LCD_W - m_text_w(g_status, 1)) / 2, LCD_H - 15, g_status, C_TEAL, 1);
     } else {
         const char *hint = "Up/Dn  A select  C back  B close";
         m_text((LCD_W - m_text_w(hint, 1)) / 2, LCD_H - 16, hint, C_FAINT, 1);
@@ -586,17 +657,129 @@ static void menu_step(void) {
     sleep_ms(16);
 }
 
-int main(void) {
-    stdio_init_all();
-    lcd_init();
-    lcd_fill(0x0000);
-    buttons_init();
+// The set of games the launcher offers: the firmware's built-in ROM first, then
+// any games found in the separately flashed pack, capped so each has its own
+// save area. The save area for a game is keyed by its index in this list.
+static struct game g_games[GAMESAVE_MAX];
+static int g_game_count = 0;
+static char g_builtin_title[ROMPACK_TITLE_LEN];
+
+static void build_game_list(void) {
+    g_game_count = 0;
+    if (GB_ROM_SIZE > 0) {
+        snprintf(g_builtin_title, sizeof(g_builtin_title), "%s", GB_ROM_TITLE);
+        g_games[g_game_count].title = g_builtin_title;
+        g_games[g_game_count].rom = gb_rom;
+        g_games[g_game_count].size = GB_ROM_SIZE;
+        g_games[g_game_count].cgb = (gb_rom[0x143] & 0x80) != 0;
+        g_game_count++;
+    }
+    int pc = rompack_count();
+    for (int i = 0; i < pc && g_game_count < GAMESAVE_MAX; i++) {
+        struct game g;
+        if (rompack_get(i, &g))
+            g_games[g_game_count++] = g;
+    }
+}
+
+// The game picker, drawn at native resolution. Returns the chosen game index.
+static int launcher(int sel) {
+    enum {
+        C_BG = 0x1082,
+        C_CARD = 0x2945,
+        C_ACCENT = 0xCDFF,
+        C_TEAL = 0x06D8,
+        C_TEXT = 0xEF7D,
+        C_DIM = 0x9CD3,
+        C_FAINT = 0x6B6D,
+    };
+    if (sel < 0 || sel >= g_game_count)
+        sel = 0;
+    bool pu = true, pd = true, pa = true; // ignore buttons still held on entry
+
+    while (1) {
+        bool u = down(BTN_UP), d = down(BTN_DOWN), a = down(BTN_A);
+        if (u && !pu)
+            sel = (sel + g_game_count - 1) % g_game_count;
+        if (d && !pd)
+            sel = (sel + 1) % g_game_count;
+        bool launch = (a && !pa);
+        pu = u;
+        pd = d;
+        pa = a;
+
+        m_fill(0, 0, LCD_W, LCD_H, C_BG);
+        m_text(16, 10, "BadgeBoy", C_TEXT, 2);
+        m_round(16, 40, 64, 4, C_ACCENT, 2);
+        {
+            const char *ver = "v" BADGEBOY_VERSION;
+            m_text(LCD_W - 16 - m_text_w(ver, 1), 14, ver, C_DIM, 1);
+        }
+        m_fill(0, 50, LCD_W, 1, C_CARD);
+
+        const int top = 56, rh = 18;
+        for (int i = 0; i < g_game_count; i++) {
+            int y = top + i * rh;
+            bool s = (i == sel);
+            if (s) {
+                m_round(12, y, LCD_W - 24, rh - 2, C_CARD, 5);
+                m_round(16, y + 3, 4, rh - 8, C_ACCENT, 2);
+            }
+            m_text(28, y + 1, g_games[i].title, s ? C_TEXT : C_DIM, 1);
+            const char *tag = g_games[i].cgb ? "CGB" : "DMG";
+            m_text(LCD_W - 16 - m_text_w(tag, 1), y + 1, tag, s ? C_TEAL : C_FAINT, 1);
+        }
+
+#ifdef BADGEBOY_DEBUG
+        // Diagnostic verdict for the selected game's stored battery save.
+        {
+            const uint8_t *r = g_games[sel].rom;
+            static const uint32_t rs[5] = {0, 0x800, 0x2000, 0x8000, 0x20000};
+            uint32_t want = rs[r[0x149] <= 4 ? r[0x149] : 0];
+            if (want > 32768)
+                want = 32768;
+            uint32_t rid = rom_id_of(r), gm = 0, gid = 0, gsz = 0;
+            save_peek_battery(sel, &gm, &gid, &gsz);
+            char verdict[40];
+            if (gm != 0x56534242u)
+                snprintf(verdict, sizeof(verdict), "SAVE: none in flash");
+            else if (gid != rid)
+                snprintf(verdict, sizeof(verdict), "SAVE: wrong id");
+            else if (gsz != want)
+                snprintf(verdict, sizeof(verdict), "SAVE: size %u want %u",
+                         (unsigned)gsz, (unsigned)want);
+            else
+                snprintf(verdict, sizeof(verdict), "SAVE: VALID %u bytes",
+                         (unsigned)gsz);
+            m_text(16, LCD_H - 52, verdict, C_TEAL, 1);
+        }
+#endif
+
+        // Footer: controls.
+        m_fill(16, LCD_H - 28, LCD_W - 32, 1, C_CARD);
+        const char *hint = "Up/Dn  choose      A  start";
+        m_text((LCD_W - m_text_w(hint, 1)) / 2, LCD_H - 20, hint, C_FAINT, 1);
+
+        lcd_blit_full(menu_fb);
+        if (launch)
+            return sel;
+        sleep_ms(16);
+    }
+}
+
+// Emulate one game until the player chooses Exit to menu. Returns to the caller,
+// which shows the launcher again. save_slot keys this game's flash save area.
+static void run_game(const struct game *gm, int save_slot) {
+    g_rom_base = gm->rom;
+    g_exit_to_menu = false;
+    g_menu_open = false;
+    g_slot = 0;
+    save_set_game(save_slot);
 
     enum gb_init_error_e err =
         gb_init(&gb, &rom_read, &ram_read, &ram_write, &gb_err, &priv);
     if (err != GB_INIT_NO_ERROR) {
-        // Pulse the backlight to signal an init failure.
-        while (1) {
+        while (1) { // Pulse the backlight to signal an init failure.
             lcd_set_backlight(255);
             sleep_ms(200);
             lcd_set_backlight(0);
@@ -606,24 +789,38 @@ int main(void) {
     gb_init_lcd(&gb, &draw_line);
     gb.direct.frame_skip = 0;
 
-    // Load this ROM's persisted cartridge save, if any. Battery-backed games
-    // report a non-zero save size; ROMs without battery RAM report zero.
+    // Load this game's persisted cartridge save, if any. Clear first so a game
+    // without a stored save never sees the previous game's RAM.
     uint32_t rid = rom_id();
     g_rom_id = rid;
+    memset(priv.cart_ram, 0, sizeof(priv.cart_ram));
     uint32_t save_size = gb_get_save_size(&gb);
     if (save_size > sizeof(priv.cart_ram))
         save_size = sizeof(priv.cart_ram);
-    save_load(priv.cart_ram, save_size, rid);
+    bool load_ok = save_load(priv.cart_ram, save_size, rid);
+    (void)load_ok;
     uint32_t saved_crc = save_size ? save_crc32(priv.cart_ram, save_size) : 0;
+
+#ifdef BADGEBOY_DEBUG
+    // Show the load result and the loaded save's checksum briefly, so it can be
+    // compared against the live checksum shown in the menu.
+    g_cur_save_size = save_size;
+    g_loaded_crc = saved_crc;
+    snprintf(g_dbg, sizeof(g_dbg), "L=%d sz=%u c=%08x", (int)load_ok,
+             (unsigned)save_size, (unsigned)saved_crc);
+    g_dbg_until = time_us_32() + 6000000;
+#endif
+
+    lcd_set_backlight_pct(bl_levels[g_brightness]);
 
     // HOME is a function modifier, like a Fn key. While HOME is held the front
     // buttons control the emulator instead of the game, and their effect is
     // latched, so a change persists after the buttons are released:
     //   HOME + A    cycle speed: normal -> 2x -> max -> normal
     //   HOME + B    toggle GBC color correction
-    //   HOME + UP   take a save-state snapshot (slot 0)
-    //   HOME + DOWN restore the save-state snapshot (slot 0)
-    //   HOME + C    open the in-game menu (slot selection, reset, and the above)
+    //   HOME + UP   take a save-state snapshot
+    //   HOME + DOWN restore the save-state snapshot
+    //   HOME + C    open the in-game menu (slot selection, shaders, exit, etc.)
     // The cartridge battery save persists automatically; it needs no button.
     //
     // Fast-forward runs several emulated frames per displayed frame and skips
@@ -634,8 +831,25 @@ int main(void) {
     bool prev_a = false, prev_b = false, prev_up = false, prev_dn = false,
          prev_c = false;
     bool do_snapshot = false, do_restore = false;
+    uint32_t last_autosave_us = 0;
+    uint32_t dirty_since_us = 0;
+    bool prev_dirty = false;
 
-    while (1) {
+    // Start the game on a clean screen, not on leftover launcher pixels or the
+    // previous game's last frame.
+    memset(priv.fb, 0, sizeof(priv.fb));
+    lcd_fill(0x0000);
+
+    // Run a few frames without drawing so the game can initialise its tiles and
+    // palettes before anything reaches the panel. Otherwise the first frames show
+    // uninitialised video memory, which looks like corruption when scaled up.
+    for (int i = 0; i < 4; i++) {
+        gb.display.lcd_draw_line = NULL;
+        gb_run_frame(&gb);
+    }
+    gb.display.lcd_draw_line = &draw_line;
+
+    while (!g_exit_to_menu) {
         uint32_t t0 = time_us_32();
 
         // The menu is modal: while it is open the game is paused.
@@ -705,6 +919,12 @@ int main(void) {
         if (time_us_32() < g_savedot_until)
             draw_dot(priv.fb, 0x06D8);
 
+#ifdef BADGEBOY_DEBUG
+        // Save diagnostic at the top of the screen for a few seconds at launch.
+        if (time_us_32() < g_dbg_until)
+            draw_text(priv.fb, 2, 2, g_dbg, 0xFFE0);
+#endif
+
         lcd_blit_gb(priv.fb);
 
         // Take a snapshot: this briefly freezes while the slot is written.
@@ -717,18 +937,24 @@ int main(void) {
             do_snapshot = false;
         }
 
-        // The cartridge battery save persists automatically once game writes
-        // have settled for 1.5 s. Some games write save RAM continuously (for an
-        // in-game clock), so commits are rate limited to at most one per 30 s to
-        // bound flash wear, and a CRC check skips writes when nothing changed.
-        // Each commit briefly freezes the emulator while the sector is erased.
-        static uint32_t last_autosave_us = 0;
+        // The cartridge battery save persists automatically. A commit happens a
+        // short time after the game's save-RAM writes settle, or, for games that
+        // write save RAM continuously (an in-game clock), after the data has been
+        // dirty for a few seconds. Commits are rate limited and skipped when the
+        // contents are unchanged, to bound flash wear. Each commit briefly freezes
+        // the emulator while the sector is erased.
         uint32_t now = time_us_32();
-        bool settled = ram_dirty && (now - ram_write_us > 1500000);
-        bool throttled = last_autosave_us && (now - last_autosave_us < 30000000);
-        if (save_size && settled && !throttled) {
+        if (ram_dirty && !prev_dirty)
+            dirty_since_us = now;
+        prev_dirty = ram_dirty;
+
+        bool settled = ram_dirty && (now - ram_write_us > 1200000);
+        bool aged = ram_dirty && (now - dirty_since_us > 5000000);
+        bool throttled = last_autosave_us && (now - last_autosave_us < 4000000);
+        if (save_size && (settled || aged) && !throttled) {
             uint32_t crc = save_crc32(priv.cart_ram, save_size);
             ram_dirty = false;
+            prev_dirty = false;
             if (crc != saved_crc) {
                 save_store(priv.cart_ram, save_size, rid);
                 saved_crc = crc;
@@ -744,5 +970,34 @@ int main(void) {
             if (rem > 0)
                 sleep_us(rem);
         }
+    }
+
+    // Leaving the game: flush any unsaved cartridge RAM so progress persists
+    // even if it changed within the last throttle window.
+    if (save_size && ram_dirty) {
+        uint32_t crc = save_crc32(priv.cart_ram, save_size);
+        if (crc != saved_crc)
+            save_store(priv.cart_ram, save_size, rid);
+        ram_dirty = false;
+    }
+}
+
+int main(void) {
+    stdio_init_all();
+    lcd_init();
+    lcd_fill(0x0000);
+    buttons_init();
+    build_game_list();
+    lcd_set_backlight_pct(bl_levels[g_brightness]);
+
+    // Boot straight into the first game; the launcher appears when a game is
+    // exited, and on every boot when more than one game is installed.
+    int sel = 0;
+    bool first = true;
+    while (1) {
+        if (!first || g_game_count > 1)
+            sel = launcher(sel);
+        first = false;
+        run_game(&g_games[sel], sel);
     }
 }

@@ -81,6 +81,7 @@ add_executable(badgeboy
   src/main.c
   src/tufty_lcd.c
   src/save.c
+  src/rompack.c
 )
 add_dependencies(badgeboy generate_rom)
 
@@ -91,6 +92,13 @@ target_compile_definitions(badgeboy PRIVATE
   DMG_PALETTE=${DMG_PALETTE}
   GBC_COLOR_CORRECTION=${GBC_COLOR_CORRECTION}
 )
+
+# Optional on-screen save and checksum diagnostics. Off by default; enable with
+# -DBADGEBOY_DEBUG=ON (or BADGEBOY_DEBUG=ON ./build.sh ...) to debug saves.
+option(BADGEBOY_DEBUG "Enable on-screen save diagnostics" OFF)
+if(BADGEBOY_DEBUG)
+  target_compile_definitions(badgeboy PRIVATE BADGEBOY_DEBUG=1)
+endif()
 
 target_include_directories(badgeboy PRIVATE
   src

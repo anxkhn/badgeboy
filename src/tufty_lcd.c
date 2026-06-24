@@ -119,6 +119,16 @@ void lcd_set_backlight(uint8_t b) {
     pwm_set_gpio_level(LCD_BL, v);
 }
 
+// Set the backlight to a linear PWM duty cycle, 0 to 100 percent. Unlike
+// lcd_set_backlight this applies no gamma, so a low percentage maps directly to a
+// low duty rather than being crushed to near zero. Used by the brightness menu so
+// every step is a real, visible hardware backlight level.
+void lcd_set_backlight_pct(uint8_t pct) {
+    if (pct > 100)
+        pct = 100;
+    pwm_set_gpio_level(LCD_BL, (uint16_t)((uint32_t)pct * 65535u / 100u));
+}
+
 void lcd_init(void) {
     // Hold the board power rail on. Required on battery; harmless on USB.
     gpio_init(POWER_EN);

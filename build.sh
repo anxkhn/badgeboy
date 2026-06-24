@@ -50,6 +50,7 @@ echo "==> 3/4  Configure (ROM=$ROM, display=$MODE)"
 cmake -S "$HERE" -B "$HERE/build" -G Ninja \
   -DPICO_PLATFORM=rp2350-arm-s \
   -DPICO_BOARD=pimoroni_pico_plus2_rp2350 \
+  -DBADGEBOY_DEBUG="${BADGEBOY_DEBUG:-OFF}" \
   -DGBC_ROM="$ROM" \
   -DGBC_DISPLAY_MODE="$MODE"
 

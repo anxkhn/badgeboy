@@ -9,6 +9,18 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "flash_layout.h"
+
+// Select which game's per-game save area subsequent calls act on. The slot is
+// the game's index in the launcher list; saves for different games never collide.
+// Call this once before loading or storing for a game.
+void save_set_game(int slot);
+
+// Diagnostic: read the raw stored battery-save header for a game slot. Returns
+// the on-flash magic, rom id, and size so callers can see why a load is rejected.
+void save_peek_battery(int game_slot, uint32_t *magic, uint32_t *rom_id,
+                       uint32_t *size);
+
 // Persistent cartridge save RAM, stored in a reserved region at the top of the
 // badge's flash. A save is tagged with a per-ROM id so it is never loaded for
 // the wrong game.
@@ -32,7 +44,7 @@ uint32_t save_crc32(const uint8_t *data, uint32_t len);
 // ROM id, so a snapshot is only ever restored into a compatible binary and game.
 
 // Number of available save-state slots.
-#define STATE_SLOTS 3
+#define STATE_SLOTS GAMESAVE_STATE_SLOTS
 
 // Snapshot the emulator to a slot. Returns false if the slot index is invalid
 // or the data does not fit. The gb_s pointers are not used by this module; the

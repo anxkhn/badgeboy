@@ -14,6 +14,10 @@ void lcd_init(void);
 // Set the backlight brightness, 0 to 255, gamma corrected.
 void lcd_set_backlight(uint8_t brightness);
 
+// Set the backlight to a linear PWM duty cycle, 0 to 100 percent (no gamma), so
+// low percentages stay visible. This is a pure hardware backlight level.
+void lcd_set_backlight_pct(uint8_t pct);
+
 // Fill the whole panel with a single RGB565 colour.
 void lcd_fill(uint16_t colour565);
 
