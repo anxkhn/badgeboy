@@ -231,3 +231,14 @@ void lcd_blit_gb(const uint16_t *fb) {
     }
     gpio_put(LCD_CS, 1);
 }
+
+void lcd_blit_full(const uint16_t *fb) {
+    set_window(0, 0, LCD_W - 1, LCD_H - 1);
+    gpio_put(LCD_DC, 0);
+    gpio_put(LCD_CS, 0);
+    uint8_t c = RAMWR;
+    wr_blocking(&c, 1);
+    gpio_put(LCD_DC, 1);
+    wr_blocking((const uint8_t *)fb, LCD_W * LCD_H * 2);
+    gpio_put(LCD_CS, 1);
+}

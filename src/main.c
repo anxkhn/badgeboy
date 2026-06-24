@@ -39,6 +39,10 @@ struct priv_t {
 static struct priv_t priv;
 static struct gb_s gb;
 
+// Native-resolution canvas for the mod menu, drawn at the panel's full 320x240
+// so text is crisp instead of upscaled from the Game Boy framebuffer.
+static uint16_t menu_fb[LCD_W * LCD_H];
+
 // Set whenever the game writes cartridge RAM, with the time of the last write.
 // The main loop persists the save to flash once writes have settled.
 static volatile bool ram_dirty = false;
@@ -188,14 +192,6 @@ static inline bool down(int pin) {
     return !gpio_get(pin);
 }
 
-// Draw a small filled block into the byte-swapped framebuffer.
-static void put_block(uint16_t *fb, int x0, int y0, int w, int h, uint16_t col) {
-    uint16_t sw = (uint16_t)((col >> 8) | (col << 8));
-    for (int y = y0; y < y0 + h && y < GB_H; y++)
-        for (int x = x0; x < x0 + w && x < GB_W; x++)
-            fb[y * GB_W + x] = sw;
-}
-
 // Tamzen 5x9 menu font. FONT_ADV and FONT_LH are the horizontal and vertical
 // advances (glyph size plus one pixel of spacing).
 #define FONT_W 5
@@ -235,14 +231,75 @@ static void draw_text(uint16_t *fb, int x0, int y0, const char *s, uint16_t col)
     }
 }
 
-// Halve every channel of every pixel to dim the frame behind the menu. Works on
-// the byte-swapped RGB565 buffer using the standard halving mask.
-static void dim_fb(uint16_t *fb) {
-    for (int i = 0; i < GB_W * GB_H; i++) {
-        uint16_t c = (uint16_t)((fb[i] >> 8) | (fb[i] << 8));
-        c = (uint16_t)((c >> 1) & 0x7BEF);
-        fb[i] = (uint16_t)((c >> 8) | (c << 8));
+// Native-resolution drawing into menu_fb (320x240, byte-swapped RGB565).
+static void m_fill(int x, int y, int w, int h, uint16_t col) {
+    uint16_t be = (uint16_t)((col >> 8) | (col << 8));
+    for (int yy = y; yy < y + h; yy++) {
+        if (yy < 0 || yy >= LCD_H)
+            continue;
+        for (int xx = x; xx < x + w; xx++)
+            if (xx >= 0 && xx < LCD_W)
+                menu_fb[yy * LCD_W + xx] = be;
     }
+}
+
+// Filled rectangle with rounded corners of radius r (Material-style surfaces).
+static void m_round(int x, int y, int w, int h, uint16_t col, int r) {
+    uint16_t be = (uint16_t)((col >> 8) | (col << 8));
+    for (int yy = 0; yy < h; yy++) {
+        for (int xx = 0; xx < w; xx++) {
+            int cx = xx < r ? r : (xx >= w - r ? w - 1 - r : xx);
+            int cy = yy < r ? r : (yy >= h - r ? h - 1 - r : yy);
+            int dx = xx - cx, dy = yy - cy;
+            if (dx * dx + dy * dy > r * r)
+                continue;
+            int px = x + xx, py = y + yy;
+            if ((unsigned)px < LCD_W && (unsigned)py < LCD_H)
+                menu_fb[py * LCD_W + px] = be;
+        }
+    }
+}
+
+// Draw a glyph scaled by an integer factor, with a one-step drop shadow.
+static void m_glyph(int x0, int y0, char ch, uint16_t col, int s) {
+    unsigned char uc = (unsigned char)ch;
+    if (uc < 0x20 || uc > 0x7F)
+        uc = '?';
+    const unsigned char *g = font_tamzen5x9[uc - 0x20];
+    uint16_t fg = (uint16_t)((col >> 8) | (col << 8));
+    uint16_t sh = 0x0000;
+    for (int r = 0; r < FONT_H; r++) {
+        unsigned char bits = g[r];
+        for (int c = 0; c < FONT_W; c++) {
+            if (!((bits >> (7 - c)) & 1))
+                continue;
+            int px = x0 + c * s, py = y0 + r * s;
+            for (int dy = 0; dy < s; dy++)
+                for (int dx = 0; dx < s; dx++) {
+                    int xx = px + dx, yy = py + dy;
+                    if ((unsigned)(xx + s) < LCD_W && (unsigned)(yy + s) < LCD_H)
+                        menu_fb[(yy + s) * LCD_W + (xx + s)] = sh; // shadow
+                }
+            for (int dy = 0; dy < s; dy++)
+                for (int dx = 0; dx < s; dx++) {
+                    int xx = px + dx, yy = py + dy;
+                    if ((unsigned)xx < LCD_W && (unsigned)yy < LCD_H)
+                        menu_fb[yy * LCD_W + xx] = fg;
+                }
+        }
+    }
+}
+
+static void m_text(int x, int y, const char *s, uint16_t col, int scale) {
+    for (; *s; s++, x += (FONT_W + 1) * scale)
+        m_glyph(x, y, *s, col, scale);
+}
+
+static int m_text_w(const char *s, int scale) {
+    int n = 0;
+    while (*s++)
+        n++;
+    return n * (FONT_W + 1) * scale;
 }
 
 // Map the five front buttons to the eight Game Boy inputs. C is a shift
@@ -292,38 +349,48 @@ static int g_menu_sel = 0;
 static char g_status[22] = "";
 
 static void menu_open(void) {
-    dim_fb(priv.fb); // dim the paused frame once; the panel is opaque
     g_menu_open = true;
     g_menu_sel = 0;
     g_status[0] = '\0';
 }
 
-static void menu_label(int item, char *out, int n) {
-    const char *speed_s[3] = {"Normal", "2x", "Max"};
+static const char *menu_name(int item) {
     switch (item) {
     case MI_RESUME:
-        snprintf(out, n, "Resume");
-        break;
+        return "Resume";
     case MI_SPEED:
-        snprintf(out, n, "Speed:   %s", speed_s[g_speed]);
+        return "Speed";
+    case MI_COLOR:
+        return "Color filter";
+    case MI_PALETTE:
+        return "Palette";
+    case MI_SLOT:
+        return "Save slot";
+    case MI_SAVE:
+        return "Save state";
+    case MI_LOAD:
+        return "Load state";
+    case MI_RESET:
+        return "Reset game";
+    }
+    return "";
+}
+
+// Value text for items that have one (settings); empty for actions.
+static void menu_value(int item, char *out, int n) {
+    const char *speed_s[3] = {"Normal", "2x", "Max"};
+    switch (item) {
+    case MI_SPEED:
+        snprintf(out, n, "%s", speed_s[g_speed]);
         break;
     case MI_COLOR:
-        snprintf(out, n, "Color:   %s", color_correct ? "On" : "Off");
+        snprintf(out, n, "%s", color_correct ? "On" : "Off");
         break;
     case MI_PALETTE:
-        snprintf(out, n, "Palette: %s", dmg_pal_names[dmg_pal_idx]);
+        snprintf(out, n, "%s", dmg_pal_names[dmg_pal_idx]);
         break;
     case MI_SLOT:
-        snprintf(out, n, "Slot:    %d", g_slot);
-        break;
-    case MI_SAVE:
-        snprintf(out, n, "Save state");
-        break;
-    case MI_LOAD:
-        snprintf(out, n, "Load state");
-        break;
-    case MI_RESET:
-        snprintf(out, n, "Reset game");
+        snprintf(out, n, "%d", g_slot);
         break;
     default:
         out[0] = '\0';
@@ -434,37 +501,61 @@ static void menu_step(void) {
     pb = b;
     pc = c;
 
-    // Opaque panel over the dimmed frame.
-    const int px = 8, py = 8, pw = GB_W - 16, ph = GB_H - 16;
-    put_block(priv.fb, px, py, pw, ph, 0x0010);         // panel
-    put_block(priv.fb, px, py, pw, 1, 0x5AEB);          // top border
-    put_block(priv.fb, px, py + ph - 1, pw, 1, 0x5AEB); // bottom border
-    draw_text(priv.fb, px + 5, py + 4, "Mod Menu", 0xFFE0);
-    draw_text(priv.fb, px + pw - 5 - 6 * FONT_ADV, py + 4, "v" BADGEBOY_VERSION,
-              0x07FF);
-    put_block(priv.fb, px + 3, py + 15, pw - 6, 1, 0x5AEB); // divider
+    // Material-style dark menu, drawn at the panel's native 320x240.
+    enum {
+        C_BG = 0x1082,     // near-black surface
+        C_CARD = 0x2945,   // elevated selected row
+        C_ACCENT = 0xCDFF, // lavender (Material You primary)
+        C_TEAL = 0x06D8,   // value / confirmation accent
+        C_TEXT = 0xEF7D,   // primary text
+        C_DIM = 0x9CD3,    // secondary text
+        C_FAINT = 0x6B6D,  // hints
+    };
+    m_fill(0, 0, LCD_W, LCD_H, C_BG);
 
+    // Header: title, accent underline, version.
+    m_text(16, 16, "Mod Menu", C_TEXT, 3);
+    m_round(16, 48, 52, 4, C_ACCENT, 2);
+    {
+        const char *ver = "v" BADGEBOY_VERSION;
+        m_text(LCD_W - 16 - m_text_w(ver, 2), 22, ver, C_DIM, 2);
+    }
+    m_fill(0, 58, LCD_W, 1, C_CARD);
+
+    // Item list.
+    const int top = 66, rh = 20;
     int row = 0;
     for (int i = 0; i < MI_COUNT; i++) {
         if (!menu_item_visible(i))
             continue;
-        int y = py + 20 + row * FONT_LH;
+        int y = top + row * rh;
         row++;
-        char line[22];
-        menu_label(i, line, sizeof(line));
-        if (i == g_menu_sel) {
-            put_block(priv.fb, px + 2, y - 1, pw - 4, FONT_LH, 0x315A);
-            draw_text(priv.fb, px + 5, y, line, 0xFFFF);
-        } else {
-            draw_text(priv.fb, px + 5, y, line, 0xC618);
+        bool sel = (i == g_menu_sel);
+        uint16_t name_c = sel ? C_TEXT : C_DIM;
+        uint16_t val_c = sel ? C_ACCENT : C_FAINT;
+        if (sel) {
+            m_round(12, y - 1, LCD_W - 24, rh - 2, C_CARD, 6);
+            m_round(16, y + 3, 4, rh - 10, C_ACCENT, 2);
         }
+        m_text(28, y + 1, menu_name(i), name_c, 2);
+        char val[16];
+        menu_value(i, val, sizeof(val));
+        if (val[0])
+            m_text(LCD_W - 24 - m_text_w(val, 2), y + 1, val, val_c, 2);
     }
-    if (g_status[0])
-        draw_text(priv.fb, px + 5, py + ph - 12, g_status, 0x07FF);
+
+    // Footer: a status line after an action, otherwise control hints.
+    m_fill(16, LCD_H - 22, LCD_W - 32, 1, C_CARD);
+    if (g_status[0]) {
+        m_text((LCD_W - m_text_w(g_status, 1)) / 2, LCD_H - 14, g_status, C_TEAL, 1);
+    } else {
+        const char *hint = "Up/Dn  move      A  select      C  back      B  close";
+        m_text((LCD_W - m_text_w(hint, 1)) / 2, LCD_H - 14, hint, C_FAINT, 1);
+    }
 
     if (g_menu_open == false)
         primed = false; // reset for next open
-    lcd_blit_gb(priv.fb);
+    lcd_blit_full(menu_fb);
     sleep_ms(16);
 }
 

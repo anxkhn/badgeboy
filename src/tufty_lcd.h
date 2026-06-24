@@ -21,4 +21,8 @@ void lcd_fill(uint16_t colour565);
 // framebuffer must hold big-endian RGB565 values (see main.c).
 void lcd_blit_gb(const uint16_t *fb);
 
+// Push a full LCD_W by LCD_H native-resolution frame to the panel. Used to draw
+// the mod menu crisply, bypassing the Game Boy upscale. Big-endian RGB565.
+void lcd_blit_full(const uint16_t *fb);
+
 #endif // TUFTY_LCD_H
